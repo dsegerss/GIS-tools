@@ -1,2 +1,5 @@
 GIT repository for GIS scripts
-Scripts are made to hande standard GIS tasks using GDAL/OGR
+Scripts are made to hande standard GIS tasks
+
+Dependencies:
+GDAL/OGR with python bindings
