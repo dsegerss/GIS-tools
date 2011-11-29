@@ -1,0 +1,46 @@
+Steg 1 - Skapa emissionsraster som ar reducerade med 20% for den sektorn som skall skiljas ut.
+------------------------------------------------------------
+For detta anvands skriptet emep2raster.py. Skriptet behover modifieras for att reducera en viss sektor istallet for att reducera emissioner for utvalda landskoder. Det ar viktigt att namnsattningen av raster i skriptet behalls for att stegen nedan skall kunna anvandas oforandrat.
+skript hittas under. Sjofarten ar lite speciell och ett sarskilt skrip har fjorts for att skala om dessa emissioner till 2020.
+
+Detta har redan gjors och emissionerna ligger i:
+/data/proj2/Ml-data/users/David/Projekt/2010/PRIMES/EMEP_SMA   kataloger med _ascii postfix avser raster och _grib avser konverterade gribfiler
+
+Filer dar sjofarten inte uppdaterats med vara prognoser ligger under
+/data/proj2/Ml-data/users/David/Projekt/2010/PRIMES/EMEP_ORG   kataloger med _ascii postfix avser raster och _grib avser konverterade gribfiler
+
+
+Steg 2: konvertera raster fran EMEP50km till roterat lat-lon.
+-------------------------------------------------------------
+Detta gors med scriptet projectRaster.py som finnes i /data/proj/Ml-data/users/David/Projekt/2010/PRIMES/raster2grib/
+Beskrivning ges med:
+raster2grib/projectRaster.py -help
+
+Da det ar manga filer har jag kort en batch-variant enligt:
+ 
+find EMEP_SMA/PrimesBaseline09_2010_ascii/S* -name '*.asc' -exec raster2grib/projectRaster.py {} -t templateGrid.asc --fromProj 'EMEP50km' --toProj 'rotLat-30Lon-10' -r 10 \;
+
+Obs. templateGrid.asc hittas i samma mapp som scriptet ligger och ar en mall over resultat-rastrets extent, cellsize etc. Flaggan -r anger hur manga ganger orginal rastret skall forfinas innan de olika rutorna sorteras in i resultat-rastret. resultatfiler namnges enligt <gammalt_filnamn>_proj.asc for att urskilja de som projicerats om.
+
+
+Steg 3: Konvertera till Grib. Detta gors med skriptet raster2grib.py som hittas pa samma stalle som skriptet ovan.
+-------------------------------------------------------------
+a) Forst skapas kopieras mallen /data/proj/Ml-data/users/David/Projekt/2010/PRIMES/template_EUR44.grb till en grib-fil med namn enl. t.ex. CO_Mg_EUR44.grb
+
+b) Ascii-raster konverteras till grib i 3 steg.
+
+   - I forsta steget laggs sektor 1 till med flaggan -o som anger att befintliga data skall skrivas over. 
+     find ../PrimesBaseline09_2010_ascii/S1 -name 'CO*_proj.asc' -exec ../../raster2grib/raster2grib.py {} CO_Mg_EUR44.grb --levfilter '.*ascii/S([0-9]*?)/.*' -o \;
+
+   - I andra steget laggs sektor 2-9 till, 
+     find ../PrimesBaseline09_2010_ascii/S? -name 'CO*_proj.asc' -exec ../../raster2grib/raster2grib.py {} CO_Mg_EUR44.grb --levfilter '.*ascii/S([2-9]*?)/.*' \;
+
+   - I tredje steget laggs sektorer >= 10 till.
+     find ../PrimesBaseline09_2010_ascii/S?? -name 'CO*_proj.asc' -exec ../../raster2grib/raster2grib.py {} CO_Mg_EUR44.grb --levfilter '.*ascii/S([0-9]*?)/.*' \;
+     
+     Jag kommer inte ihag varfor jag delade upp det sa har, men det fanns nagot skal...det gar sakert att gora smidigare, om man orkar/vill...
+
+Sedan ar det bara att meddela modellerare vart emissionerna ligger...
+
+
+David
