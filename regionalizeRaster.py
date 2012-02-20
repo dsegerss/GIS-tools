@@ -8,13 +8,6 @@ import os,future,numpy,sys,pyEmissions,fileInput,PyRaster
 
 #-----------------------------------------
 #If the parameter uniformDistribution is set to True no keyRaster is needed. The data is distributed uniformly within the regions
-#uniformDistribution=False 
-#keyRasterPath="Y:/PROJEKT/2010/Fredrikstad_Norge/Konvertering_griddade_emissioner/road_buffer_zone.asc"
-#regionRasterPath="Y:/PROJEKT/2010/Fredrikstad_Norge/Konvertering_griddade_emissioner/grunnkretser.asc"
-#regionalTotalsPath="Y:/PROJEKT/2010/Fredrikstad_Norge/Konvertering_griddade_emissioner/PM10_boliger.txt"
-#resultRasterPath="Y:/PROJEKT/2010/Fredrikstad_Norge/Konvertering_griddade_emissioner/residential_PM10.asc"
-#substance="PM10" 
-#distributeEmis=True
 uniformDistribution=False 
 keyRasterPath="//Winfs/data/prod/Smeddata/Geofordelning/keys/industrimark_v1.asc"
 regionRasterPath="//Winfs/data/prod/Smeddata/Geofordelning/geodata/ascii/ln07_sr99tm.asc"
