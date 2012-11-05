@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 doc="""
 ********************************************************************************
-Name: reclassRaster.py
+Name: processRaster.py
 Created: 25 Oct 2011
 Author: David Segersson
 
@@ -43,6 +43,7 @@ dataTypes={"Float32":GDT_Float32,
 
     
 def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
+    """Write a block to a shape-file"""
     nrows,ncols=block.shape
     #start loop at first row, first col
     yul=yll-nrows*cellsizeY #cellsizeY is negative
@@ -421,8 +422,8 @@ def main():
         if options.classTable is not None:
             try:
                 data=reclassBlock(data,classDict)
-            except IOError as (errno,errMsg):
-                logger.error(errMsg)
+            except IOError as e:
+                logger.error(str(e))
                 sys.exit(1)
 
         if options.cellFactor is not None:
