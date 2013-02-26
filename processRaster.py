@@ -21,9 +21,10 @@ from optparse import OptionParser
 import pdb
 
 import numpy as np
+
 #pyAirviro-modules
-from pyAirviro_dev.other import logger2, dataTable
-from  pyAirviro_dev.other.utilities import ProgressBar
+from pyAirviro.other import logger, datatable
+from  pyAirviro.other.utilities import ProgressBar
 
 try:
     from osgeo import ogr
@@ -232,8 +233,8 @@ def main():
     (options, args) = parser.parse_args()
     
     #------------Setting up logging capabilities -----------
-    rootLogger=logger2.RootLogger(int(options.loglevel))
-    logger=rootLogger.getLogger(sys.argv[0])
+    rootLogger=logger.RootLogger(int(options.loglevel))
+    log=rootLogger.getLogger(sys.argv[0])
 
     #------------Process and validate options---------------
     if options.doc:
@@ -247,7 +248,7 @@ def main():
     if options.infileName is not None:
         inFilePath=path.abspath(options.infileName)
         if not path.exists(inFilePath):
-            logger.error("Input raster does not exist")
+            log.error("Input raster does not exist")
             sys.exit(1)
     else:
         parser.error("No input data specified")
@@ -273,11 +274,11 @@ def main():
     #read and process reclass table file
     if options.classTable is not None:
         classTablePath=path.abspath(options.classTable)
-        classTable=dataTable.DataTable(desc=[{"id":"code","type":int},
+        classTable=datatable.DataTable(desc=[{"id":"code","type":int},
                                              {"id":"z0","type":float}],
                                        keys=["code"])
         classTable.read(classTablePath)
-        logger.debug("Successfully read landuse class table")
+        log.debug("Successfully read landuse class table")
 
         classDict={}
         for row in classTable.data:
@@ -352,7 +353,7 @@ def main():
     try:
         dataType=dataTypes[options.dataType]
     except KeyError:
-        logger.error("Unknown datatype choose between: %s" %",".join(dataTypes.keys()))
+        log.error("Unknown datatype choose between: %s" %",".join(dataTypes.keys()))
         sys.exit(1)
 
     #Create and configure output raster data source
@@ -377,7 +378,7 @@ def main():
             shapeDriver.DeleteDataSource(outFilePath)
         shapeFile = shapeDriver.CreateDataSource(outFilePath)
         if shapeFile is None:
-            logger.error("Could not open output shapefile %s" %outFilePath)
+            log.error("Could not open output shapefile %s" %outFilePath)
             sys.exit(1)    
         layer=shapeFile.CreateLayer(outFilePath,geom_type=ogr.wkbPolygon)
         fieldDefn = ogr.FieldDefn('value', ogr.OFTReal)
@@ -423,17 +424,17 @@ def main():
             try:
                 data=reclassBlock(data,classDict)
             except IOError as e:
-                logger.error(str(e))
+                log.error(str(e))
                 sys.exit(1)
 
         if options.cellFactor is not None:
             try:
                 data=resampleBlock(data[:,:],cellFactor,options.resamplingMethod,nodata)
             except ValueError as (errno,errMsg):
-                 logger.error(errMsg)
+                 log.error(errMsg)
                  sys.exit(1)
             except IOError as (errno,errMsg):
-                 logger.error(errMsg)
+                 log.error(errMsg)
                  sys.exit(1)
 
         if outFilePath is not None:

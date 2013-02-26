@@ -11,7 +11,7 @@ import numpy
 from osgeo import gdal
 from osgeo.gdalconst import *
 
-from pyAirviro_dev.geo import raster
+from pyAirviro.geo.raster import Raster
 
 import pdb
 
@@ -77,7 +77,7 @@ def read(filename,bandIndex=None,dataType=numpy.float):
     for bi in bandRange:
         band = ds.GetRasterBand(bi)
         nodata=band.GetNoDataValue()
-        rast=raster.raster(Xll=xll,Yll=yll,Ncols=ncols,Nrows=nrows,Cellsize=abs(cellsizeX),Nodata=nodata)
+        rast=Raster(Xll=xll,Yll=yll,Ncols=ncols,Nrows=nrows,Cellsize=abs(cellsizeX),Nodata=nodata)
 
 
         xBlockSize,yBlockSize=band.GetBlockSize()
