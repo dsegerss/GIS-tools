@@ -17,6 +17,7 @@ Process rasters without reading the complete raster into memory (good for large 
 #Standard modules
 from os import path
 import sys,gc
+import re
 from optparse import OptionParser
 import pdb
 
@@ -27,6 +28,7 @@ from pyAirviro.other import logger, datatable
 from  pyAirviro.other.utilities import ProgressBar
 
 try:
+    from osgeo import osr
     from osgeo import ogr
     from osgeo import gdal
     from osgeo.gdalconst import *
@@ -125,52 +127,104 @@ def printGridSummary(gridSummary):
 
 def resampleBlock(block,cellFactor,method,nodata):
     """
-    Resample the numpy array to a coarser grid
+    Resample the numpy array to a coarser or finer grid
     @param block: a numpy array
-    @param cellFactor: an integer factor to divide the cell side by
-    @param method: method to use when resampling, sum, mean or majority can be used
+    @param cellFactor: a factor to divide the cell side by, if < 1 -> refinement
+    @param method: method for resampling to coarser grid (sum, mean or majority)
     @param nodata: nodata value
     """
     orgNrows=block.shape[0]
     orgNcols=block.shape[1]
-
-    if orgNcols%cellFactor!=0 or orgNrows%cellFactor!=0:
-        raise ValueError("Raster dimensions have to be dividable with the cellFactor for resampling")
+    
+    if cellFactor>1:
+        if orgNcols%cellFactor!=0 or orgNrows%cellFactor!=0:
+            raise ValueError("Raster dimensions have to be dividable"+ 
+                             "with the cellFactor for resampling")
     
     newNcols=orgNcols/cellFactor
     newNrows=orgNrows/cellFactor
     newBlock=np.zeros((newNrows,newNcols))
-    
-    if method =="sum":
-        for row in range(newNrows):
-            for col in range(newNcols):
-                cells=block[row*cellFactor:(row+1)*cellFactor,
-                                col*cellFactor:(col+1)*cellFactor]
-                newBlock[row,col]=cells.sum()
-    elif method=="mean":
-        for row in range(newNrows):
-            #print row/float(rast.nrows)
-            for col in range(newNcols):
-                cells=block[row*cellFactor:(row+1)*cellFactor,
-                                col*cellFactor:(col+1)*cellFactor]                
-                newBlock[row,col]=cells.mean()
-    elif method=="majority":
-        for row in range(newNrows):
-            for col in range(newNcols):
-                cells=block[row*cellFactor:(row+1)*cellFactor,
-                                col*cellFactor:(col+1)*cellFactor]                
-                maxCountVal=-9e99
-                maxCount=0
-                for val in cells.unique():
-                    count=(cells==val).sum()
-                    if count>maxCount:
-                        maxCount=count
-                        maxCountVal=val
-                newBlock[row,col]=maxCountVal
+
+    if cellFactor>1:
+        if method =="sum":
+            for row in range(newNrows):
+                for col in range(newNcols):
+                    cells=block[row*cellFactor:(row+1)*cellFactor,
+                                    col*cellFactor:(col+1)*cellFactor]
+                    newBlock[row,col]=cells.sum()
+        elif method=="mean":
+            for row in range(newNrows):
+                #print row/float(rast.nrows)
+                for col in range(newNcols):
+                    cells=block[row*cellFactor:(row+1)*cellFactor,
+                                    col*cellFactor:(col+1)*cellFactor]                
+                    newBlock[row,col]=cells.mean()
+        elif method=="majority":
+            for row in range(newNrows):
+                for col in range(newNcols):
+                    cells=block[row*cellFactor:(row+1)*cellFactor,
+                                    col*cellFactor:(col+1)*cellFactor]                
+                    maxCountVal=-9e99
+                    maxCount=0
+                    for val in cells.unique():
+                        count=(cells==val).sum()
+                        if count>maxCount:
+                            maxCount=count
+                            maxCountVal=val
+                    newBlock[row,col]=maxCountVal
+        else:
+            raise IOError("Resampling method %s invalid for coarsening" %method)
     else:
-        raise IOError("Method %s does not exist" %method)
+        refinement=int(1/cellFactor)
+        newBlock=np.zeros(
+            (block.shape[0]*refinement,block.shape[1]*refinement))
+
+        if method == "keepValue":
+            for row in range(orgNrows):
+                for col in range(orgNcols):
+                    minRow=row*refinement
+                    minCol=col*refinement
+                    newBlock[minRow:minRow+refinement,
+                             minCol:minCol+refinement]=block[row,col]
+
+        elif method=="keepTotal":
+            nSubcells=pow(refinement,2)
+            for row in range(orgNrows):
+                for col in range(orgNcols):
+                    val=block[row,col]
+                    minRow=row*refinement
+                    minCol=col*refinement
+                    if val!=nodata:
+                        newBlock[minRow:minRow+refinement,
+                                 minCol:minCol+refinement]=val/float(nSubcells)
+                        
+        else:
+            raise IOError("Resampling method %s invalid for refinement" %method)
+
     return newBlock
 
+def reprojectBlock(outArray,block,cellFactor,blockDef,outDef,coordTrans):
+    for inRow in range(blockDef["nrows"]):
+        for inCol in range(blockDef["ncols"]):            
+            val=block[inRow,inCol]
+            x_in=blockDef["xll"]+(inCol+0.5)*blockDef["cellsize"]
+            y_in=blockDef["yul"]-(inRow+0.5)*blockDef["cellsize"]
+    
+            x_out,y_out,z_out = coordTrans.TransformPoint(x_in, y_in)
+            
+            if((x_out<outDef["xll"] or y_out<outDef["yll"]) or 
+               (x_out > outDef["xur"] or y_out > outDef["yul"])):
+                continue
+            outCol=int((x_out-outDef["xll"])/outDef["cellsize"])
+            outRow=outDef["nrows"]-int(
+                np.ceil((y_out-outDef["yll"])/outDef["cellsize"]))
+            if outRow == outDef["nrows"]:
+                outRow -=1
+            if outCol == outDef["ncols"]:
+                outRol -=1            
+            if val != blockDef["nodata"]:
+                outArray[outRow,outCol]+=val
+                
 
 def main():
     #-----------Setting up and unsing option parser-----------------------
@@ -192,6 +246,10 @@ def main():
                       action="store",dest="infileName",
                       help="Input raster")
 
+    parser.add_option("--bbox",
+                      action="store",dest="bbox",
+                      help="Only read data within bbox, --box <\"x1,y1,x2,y2\"")
+
     parser.add_option("--reclassify",
                       action="store",dest="classTable",
                       help="Tab-separated table with code "+
@@ -199,12 +257,13 @@ def main():
 
     parser.add_option("--resample",
                       action="store",dest="cellFactor",
-                      help="Resample grid to lower resolution by dividing cellsize with an integer factor")
+                      help="Resample grid by dividing cellsize with an integer factor. Factor <1 results in refinement. Reprojection uses temporary refinement")
 
     parser.add_option("--resamplingMethod",
                       action="store",dest="resamplingMethod",
                       help="Choose between 'mean', 'sum' or 'majority', default is %default",
                       default="mean")
+
 
     parser.add_option("--summarize",
                       action="store_true",dest="summarize",
@@ -229,6 +288,16 @@ def main():
                       action="store",dest="filter",
                       help="Filter out data equal or below limit in shape output",
                       default=None)
+
+    parser.add_option("-t","--template",
+                      action="store",dest="template",
+                      help="Header for output raster when reprojecting")
+    
+    parser.add_option("--fromProj",dest="fromProj",
+                      help="Input raster proj4 definition string")
+    
+    parser.add_option("--toProj",dest="toProj",
+                      help="Output raster proj4 definition string")
         
     (options, args) = parser.parse_args()
     
@@ -330,24 +399,116 @@ def main():
     #If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
         nodata=-9999
+    #Read data from a window defined by option --bbox <"x1,y1,x2,y2">
+    if options.bbox is not None:
+        xur=xll+ncols*cellsizeX
+        try:
+            x1,y1,x2,y2=map(float,options.bbox.split(","))
+        except:
+            log.error("Invalid value for option --bbox <\"x1,y1,x2,y2\">")
+            sys.exit(1)
+
+
+        #Check if totally outside raster extent
+        if x2<xll or y2 < yll  or x1>xur or y1>yul:
+            log.error("Trying to extract outside grid boundaries")
+            sys.exit(1)
+        
+        #Limit bbox to raster extent
+        if x1<xll:
+            x1=xll
+        if x2>xur:
+            x2=xur
+        if y1<yll:
+            y1=yll
+        if y2>yul:
+            y2=yul
+
+        #estimate min and max of rows and cols
+        colmin=int((x1-xll)/cellsizeX)
+        colmaxdec=(x2-xll)/float(cellsizeX)
+        rowmin=int((yul-y2)/abs(cellsizeY))
+        rowmaxdec=(yul-y1)/float(abs(cellsizeY))
+
+        if (colmaxdec-int(colmaxdec))>0:
+            colmax=int(colmaxdec)
+        else:
+            colmax=int(colmaxdec-1)
+
+        if (rowmaxdec-int(rowmaxdec))>0:
+            rowmax=int(rowmaxdec)
+        else:
+            rowmax=int(rowmaxdec-1)
+                
+        nrows=rowmax-rowmin+1
+        ncols=colmax-colmin+1
+        xll= xll+colmin*cellsizeX
+        yll=yul+(rowmax+1)*cellsizeY #cellsizeY is negative
+        yul=yll-nrows*cellsizeY
+    else:
+        rowmin=0
+        colmin=0
+
+    #process option for resampling
+    if options.cellFactor is not None:
+        cellFactor=float(options.cellFactor)
+    else:
+        cellFactor=1
+    
+    if cellFactor>=1:
+        procYBlockSize=cellFactor
+    else:
+        procYBlockSize=1
+
+    if options.toProj is None:
+        #Set output raster dimensions and cellsize
+        newNcols=int(ncols/cellFactor)
+        newNrows=int(nrows/cellFactor)
+        newCellsizeX=cellsizeX*cellFactor
+        newCellsizeY=cellsizeY*cellFactor #is a negative value as before
+        newXll=xll
+        newYll=yll
+        newYul=yul
+        newNodata=nodata
+
+    else:
+        #Create coordinate transform
+        if options.fromProj is None:
+            src_srs = proj
+        else:
+            src_srs = osr.SpatialReference()
+            src_srs.ImportFromProj4(options.fromProj)
+        tgt_srs = osr.SpatialReference()
+        tgt_srs.ImportFromProj4(options.toProj)            
+        coordTrans= osr.CoordinateTransformation( src_srs, tgt_srs)
+
+        if options.template is None:
+            #estimate extent from input
+            newNcols=ncols
+            newNrows=nrows
+            newCellsizeX=cellsizeX
+            newCellsizeY=cellsizeY
+            newNodata=nodata
+            newXll,newYll,z= coordTrans.TransformPoint(xll, yll)
+            newXll=int(newXll)
+            newYll=int(newYll)
+            newYul=newYll-newNrows*newCellsizeY
+        else:
+            header=open(options.template,"r").read()
+            newNcols=int(re.compile("ncols\s*([0-9]*)").search(header).group(1))
+            newNrows=int(re.compile("nrows\s*([0-9]*)").search(header).group(1))
+            newCellsizeX=float(
+                re.compile("cellsize\s*([0-9]*)").search(header).group(1))
+            newCellsizeY=-1*newCellsizeX
+            newNodata=float(re.compile("NODATA_value\s*(.*?)\n").search(header).group(1))
+            newXll=float(re.compile("xllcorner\s*(.*?)\n").search(header).group(1))
+            newYll=float(re.compile("yllcorner\s*(.*?)\n").search(header).group(1))
+            newYul=newYll-newNrows*newCellsizeY
 
     #Processing of data is made for blocks of the following size
     #Important - blocks are set to cover all columns for simpler processing
     #This might not always be optimal for read/write speed
     procXBlockSize=ncols 
-
-    #process option for resampling
-    if options.cellFactor is not None:
-        cellFactor=int(options.cellFactor)
-    else:
-        cellFactor=1
-        
-    #Set output raster dimensions and cellsize
-    procYBlockSize=cellFactor 
-    newNcols=ncols/cellFactor
-    newNrows=nrows/cellFactor
-    newCellsizeX=cellsizeX*cellFactor
-    newCellsizeY=cellsizeY*cellFactor #is a negative value as before
 
     #process option for dataType
     try:
@@ -359,17 +520,32 @@ def main():
     #Create and configure output raster data source
     if outFilePath is not None and not options.toShape:
         #Creates a raster dataset with 1 band
-        driver=ds.GetDriver()
+        driver=gdal.GetDriverByName("GTiff")
         outDataset = driver.Create(outFilePath, newNcols,newNrows, 1, dataType)
         if outDataset is None:
             print "Error: could not create output raster"
             sys.exit(1)
 
-        geotransform = [xll, newCellsizeX, 0, yul, 0, newCellsizeY]
-        outDataset.SetGeoTransform(geotransform)
-        outDataset.SetProjection(proj)
+        outGeotransform = [newXll, newCellsizeX, 0, newYul, 0, newCellsizeY]
+        outDataset.SetGeoTransform(outGeotransform)
+        if options.toProj is not None:
+            outDataset.SetProjection(tgt_srs.ExportToWkt())
+        else:
+            outDataset.SetProjection(proj)
         outBand = outDataset.GetRasterBand(1)
-        outBand.SetNoDataValue(nodata) #Set nodata-value
+        outBand.SetNoDataValue(newNodata) #Set nodata-value
+
+    if options.fromProj!=options.toProj:
+        outArray=np.zeros((newNrows,newNcols))
+        outDef={"ncols":newNcols,
+                "nrows":newNrows,
+                "xll":newXll,
+                "yll":newYll,
+                "yul":newYll-newNrows*newCellsizeY,
+                "xur":newXll+newNcols*newCellsizeX,
+                "cellsize":newCellsizeX
+                }
+        
 
     #Create and inititialize output vector data source
     if options.toShape:
@@ -383,6 +559,7 @@ def main():
         layer=shapeFile.CreateLayer(outFilePath,geom_type=ogr.wkbPolygon)
         fieldDefn = ogr.FieldDefn('value', ogr.OFTReal)
         layer.CreateField(fieldDefn)
+
 
     #inititialize input grid summary
     inputGridSummary={"sum":0,                 
@@ -401,21 +578,23 @@ def main():
                        "mean":0,
                        "nnodata":0,
                        "nnegative":0,
-                       "xll":xll,
-                       "yll":yll,
+                       "xll":newXll,
+                       "yll":newYll,
                        "ncols":newNcols,
                        "nrows":newNrows,
                        "cellsizeX":newCellsizeX,
                        "cellsizeY":newCellsizeY,
-                       "nodatavalue":nodata}
+                       "nodatavalue":newNodata}
         
-
     #Loop over block of raster (at least one row in each block)
     rowsOffset=0
     pg=ProgressBar(nrows,sys.stdout)
+
     for i in range(0, nrows, procYBlockSize):
         pg.update(i)
-        data = band.ReadAsArray(0, i, procXBlockSize, procYBlockSize)
+        data = band.ReadAsArray(xoff=colmin, yoff=rowmin+i,
+                                win_xsize=procXBlockSize, 
+                                win_ysize=procYBlockSize)
 
         if options.summarize:
             gridSummary=updateGridSummary(data,inputGridSummary,nodata)
@@ -429,20 +608,39 @@ def main():
 
         if options.cellFactor is not None:
             try:
-                data=resampleBlock(data[:,:],cellFactor,options.resamplingMethod,nodata)
-            except ValueError as (errno,errMsg):
-                 log.error(errMsg)
-                 sys.exit(1)
-            except IOError as (errno,errMsg):
-                 log.error(errMsg)
-                 sys.exit(1)
+                data=resampleBlock(data[:,:],
+                                   cellFactor,
+                                   options.resamplingMethod,
+                                   nodata)
 
-        if outFilePath is not None:
+            except ValueError as err:
+                 log.error(err.message)
+                 sys.exit(1)
+            except IOError as err:
+                 log.error(err.message)
+                 sys.exit(1)     
+
+        if options.toProj is not None:
+            blockDef = {"nrows":int(procYBlockSize/cellFactor),
+                        "ncols":int(procXBlockSize/cellFactor),
+                        "xll":xll+(colmin)*cellsizeX,
+                        "yul":yll-(nrows-rowmin-i)*cellsizeY,
+                        "cellsize":cellsizeX*cellFactor,
+                        "nodata":nodata}
+
+            reprojectBlock(outArray,
+                           data,
+                           cellFactor,
+                           blockDef,
+                           outDef,
+                           coordTrans)
+
+        if outFilePath is not None:            
             if options.toShape:
                 blockYll=yul+i*newCellsizeY #newCellsizeY is negative
                 blockXll=xll
                 block2vector(data,layer,blockXll,blockYll,newCellsizeX,newCellsizeY,nodata,filter)
-            else:
+            elif options.toProj is None:
                 outBand.WriteArray(data,0,rowsOffset) #Write block to raster
                 outBand.FlushCache() #Write data to disk
 
@@ -450,10 +648,13 @@ def main():
             gridSummary=updateGridSummary(data,outputGridSummary,nodata)
 
         rowsOffset+=procYBlockSize/cellFactor #Update offset
-        
 
     if options.toShape:
         shapeFile.Destroy()
+
+    if options.toProj is not None:
+        outBand.WriteArray(outArray,0,0)
+        outBand.FlushCache() #Write data to disk
         
     pg.finished()
     
@@ -466,10 +667,10 @@ def main():
     
 
 if __name__=="__main__":
-    main()
-#       try:
-#          main()
-#      except:
-#          import pdb, sys
-#          e, m, tb = sys.exc_info()
-#          pdb.post_mortem(tb)
+#    main()
+    try:
+        main()
+    except:
+        import pdb, sys
+        e, m, tb = sys.exc_info()
+        pdb.post_mortem(tb)
