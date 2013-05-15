@@ -667,10 +667,10 @@ def main():
     
 
 if __name__=="__main__":
-#    main()
-    try:
-        main()
-    except:
-        import pdb, sys
-        e, m, tb = sys.exc_info()
-        pdb.post_mortem(tb)
+    main()
+    # try:
+    #     main()
+    # except:
+    #     import pdb, sys
+    #     e, m, tb = sys.exc_info()
+    #     pdb.post_mortem(tb)
