@@ -1,20 +1,34 @@
-""" This script can be used to weight a key raster by regional statistical data.
-The script creates an output raster sum of the emissions within a region equals the regional total
-The emissions within a given each region is distributed using a specified distribution key
-The script is hard coded for the SMED-raster extents and resolution
-David Segersson, 080212
-"""
-import os,future,numpy,sys,pyEmissions,fileInput,PyRaster
+#!/usr/bin/env python
+# -*- coding: latin-1 -*-
 
-#-----------------------------------------
-#If the parameter uniformDistribution is set to True no keyRaster is needed. The data is distributed uniformly within the regions
-uniformDistribution=False 
-keyRasterPath="//Winfs/data/prod/Smeddata/Geofordelning/keys/industrimark_v1.asc"
-regionRasterPath="//Winfs/data/prod/Smeddata/Geofordelning/geodata/ascii/ln07_sr99tm.asc"
-regionalTotalsPath="//Winfs/data/prod/Smeddata/Geofordelning/originalstatistik/skogsbruk/avverkning_2006_08.txt"
-resultRasterPath="//Winfs/data/prod/Smeddata/Geofordelning/keys/avverkning_v5.asc"
-substance="all" 
-#--------------------------------
+#standard modules
+import os,sys
+
+#third party modules
+import numpy as np 
+
+#pyAirviro
+from pyAirviro.geo.raster import Raster
+from pyAirviro.other import logger
+from pyAirviro.other.datatable import DataTable
+
+#------Global variables--------
+log=None 
+#-----------------------------
+
+doc="""
+********************************************************************************
+Name: regionalizeRaster.py
+Created: 30 May 2013
+Author: David Segersson
+
+Description
+--------------------------------------------------------------------------------
+Redistribute a raster so that regions are scaled to match a statistics table.
+1. The sum for each region is calculated
+2. All cells in the region are divided by this sum (normalized)
+3. The cells in the region are multiplied with the corresponding sum found in the statistics table.
+"""
 
 def distributeRegion(argList):
     regionArray=argList[0]
@@ -23,101 +37,171 @@ def distributeRegion(argList):
     result=argList[3]
     regionalTotal=argList[4]
     
-    mask=numpy.array(regionArray==code)
+    mask=np.array(regionArray==code)
     regKey=mask*data
-    regSum=numpy.sum(numpy.sum(regKey))
+    regSum=np.sum(np.sum(regKey))
     #These two are put here to ensure that all threads are executed equally fast.
-    onesRast=mask*(numpy.ones(mask.shape)*1.0)
-    regMaskSum=numpy.sum(numpy.sum(onesRast))
+    onesRast=mask*(np.ones(mask.shape)*1.0)
+    regMaskSum=np.sum(np.sum(onesRast))
     if regSum>0:
         result=result+regKey/regSum
     elif regionalTotal>0:
-        print "Warning, for code: ",code," the distribution key is zero but the regional total is: ",regionalTotal
-        print "The regional total is distributed uniformly over the whole region!"        
+        log.warning("For code: %i the distribution key is zero but the regional total is: %f," %(
+                code,regionalTotal)+"the distribution is homogenious over the whole region")
         result=result+onesRast/regMaskSum      
     return result
 
-keyRast= PyRaster.raster() # skapar ett initialt tomt raster
-regionRast= PyRaster.raster()# skapar ett initialt tomt raster
 
-#Laser in indata efter att ha kontrollerat att filerna finns
-if os.path.exists(regionRasterPath):
-    print "Reading region raster"
-    regionRast.readAscii(regionRasterPath)  
-else:
-    sys.exit("regionRaster does not exist")
+def main():
+    #-----------Setting up and unsing option parser-----------------------
+    parser=OptionParser(usage= usage, version=version)
 
-if not uniformDistribution:
-    if os.path.exists(keyRasterPath):
-        print "Reading key raster"
-        keyRast.readAscii(keyRasterPath)
-    else:
-        sys.exit("keyRaster does not exist")
-else:
-    keyRast.nodataToZero()
-    keyRast=keyRast+1
+    parser.add_option("-d","--doc",
+                      action="store_true", dest="doc",
+                      help="Prints more detailed documentation and exit")
+                      
+    parser.add_option("-l", "--loglevel",
+                      action="store",dest="loglevel",default=2,
+                      help="Sets the loglevel (0-3 where 3=full logging)")
+    
+    parser.add_option("-o","--output",
+                      action="store",dest="outfileName",default=None,
+                      help="Output file")
+
+    parser.add_option("-i","--i",
+                      action="store",dest="infile",
+                      help="Raster to be regionalized") 
+
+    parser.add_option("-r","--regdef",
+                      action="store",dest="regdef",
+                      help="Raster defining the regions found in statistics table")
+                      
+    parser.add_option("-s","--stat",
+                      action="store",dest="stat",
+                      help="Tab-separated statistics table, "+
+                      "with 1st column representing geocode and value representing region sum")
+
+    parser.add_option("-c","--colname",
+                      action="store",dest="colname",
+                      help="Header of column in stat table to fetch region sums from")
+
         
+    (options, args) = parser.parse_args()
     
-regionalTotals=pyEmissions.RegTotalEmis("dummy")
-if os.path.exists(regionalTotalsPath):
-    print "Reading regional totals"
-    regionalTotals.readAscii(regionalTotalsPath)
-else:
-    sys.exit("Regional totals file does not exist")
+    #------------Setting up logging capabilities -----------
+    rootLogger=logger.RootLogger(int(options.loglevel))
+    global log
+    log=rootLogger.getLogger(sys.argv[0])
+
+    #------------Process and validate options---------------
+    if options.doc:
+        print doc
+        sys.exit()
     
-print "Finished reading data!"
+    if len(args) > 0:
+        parser.error("Incorrect number of arguments")
+    
+    regdef= Raster()
+    if options.regdef is not None:
+        regdef.read(options.regdef)
+    else:
+        log.error("No region definition raster specified")
+        sys.exit(1)
+    
 
-keyRast.nodataToZero()
-regionRast.nodataToZero()
+    key= Raster()
+    if options.infile is not None:
+        key.read(options.infile)
+    else:
+        log.info("No initial distribution raster given, using homogenious distribution")
+        key.assign(regdef)
+        key.data=np.where(regdef.data!=regdef.nodata,1,regdef.nodata)
+        
+    if options.stat is None:
+        log.error("No statistics table specified")
+        sys.exit(1)
 
-print "Ensuring consistency and completeness in codes in region raster and regional totals"
-#Skapar en lista med de koder som finns representerade i regionsrastret
-codesInRegionRast=regionRast.unique()
-if regionRast.nodata in codesInRegionRast:
-    codesInRegionRast.remove(regionRast.nodata)
-if 0.0 in codesInRegionRast:
-    codesInRegionRast.remove(0.0)
+    if (regdef.xll != key.xll or regdef.yll != key.yll):
+        log.error("The raster domain size is differs between key raster and region raster")
 
-codesInRegionalTotals=regionalTotals.getIDs()
-if "National" in codesInRegionalTotals:
-    codesInRegionalTotals.remove("National")
+    
+    stat=DataTable()
+    stat.read(options.stat,defaultType=float)
+    stat.convertCol(stat.desc[0]["id"],int)
 
-totFractionList=[]
-codeNumList=[]
-for code in codesInRegionalTotals:
-    totalEmis=regionalTotals.totalDict[code]
-    emission=totalEmis.emisDict[substance]
-    if emission==-9999:
-        emission=0
-    emissionFraction=emission/regionalTotals.regSum(substance)
-    totFractionList.append((int(code),emissionFraction))
-    #creates a copy of codesInRegionalTotals with numerical values instead of strings
-    codeNumList.append(int(code))
-    #Assuring that the regional total codes are present in the regional raster
-    if int(code) not in codesInRegionRast:
-        sys.exit("Input Error: code:"+ str(int(code))+"in regional totals is not represented in regional raster") 
+    #Set first column as unique id for rows
+    stat.setKeys([stat.desc[0]["id"]])
 
-#Assuring that the regional raster IDs are present in the regional totals                
-for code in codesInRegionRast:
-    if code not in codeNumList:
-        sys.exit("Input Error: ID:"+str(code)+" in region raster is not represented in regional totals!")
+    #Remove nodata in rasters
+    key.nodataToZero()
+    regdef.nodataToZero()
 
-#Creates a raster with all cells within a region given the regions fraction of the national total
-totFractionRast=regionRast.replace(totFractionList)
-totFractionRast.nodataToZero()
-#For all regions, calculate the regional sum, set the key values to key/regSum
-resKeyArray=numpy.zeros(keyRast.data.shape)
-maskArray=numpy.zeros(regionRast.data.shape)
-print "Regionalizing key raster"
-for code in codesInRegionRast:
-    totalEmis=regionalTotals.totalDict[str(int(code))]
-    emission=totalEmis.emisDict[substance]
-    print "Regionalizing region: " + str(code)+" with the regional total: ",emission     
-    regDistThread=future.Future(distributeRegion,[regionRast.data,keyRast.data,code,resKeyArray,emission])         
-    resKeyArray=regDistThread()
-keyRast.data=resKeyArray
+    log.info("Consistency och completeness check for codes in regdef and statistics")
+    #Create list of codes in raster
+    regdefCodes=regdef.unique()
 
-resultRast=(totFractionRast*keyRast)*regionalTotals.regSum(substance)        
-resultRast.write(resultRasterPath)
-print "Result with sum: ",resultRast.sum()," written to disk!"
+    if 0.0 in regdefCodes:
+        regdefCodes.remove(0.0)
+
+    statRegCodes=[row[0] for row in stat.data]
+               
+    if options.colname is not None:
+        try:
+            col=stat.colIndex[options.colname]
+        except KeyError:
+            log.error("No column named %s found in statistics table" %options.colname)
+            sys.exit(1)
+    else:
+        col=1    
+    colId=stat.desc[col]["id"]
+    
+    errFound=False
+    for code in statRegCodes:
+        #Assuring that the regional codes are present in regdef
+        if code not in regdefCodes:
+            log.error("Input Error: code:"+ str(int(code))+
+                     "in regional totals is not represented in regional raster") 
+            errFound=True
+            
+
+    #Assuring that the regional raster IDs are present in the regional statistics
+    for code in regdefCodes:
+        if code not in codeNumList:
+            log.error("Input Error: ID:"+str(code)+
+                     " in region raster is not represented in regional totals!")
+            errFound=True
+
+    if errFound:
+        sys.exit(1)
+
+    #For all regions, calculate the regional sum, set the key values to key/regSum
+    res=np.zeros(key.data.shape)
+    log.info("Regionalizing key raster")
+    for code in regdefCodes:
+        emis=stat.lookup(code,colId)
+        mask=np.array(regdef.data==code)
+        regKey=mask*key.data
+        regSum=np.sum(np.sum(regKey))
+        if regSum>0:
+            res=res+regKey/regSum
+        else:
+            log.warning("Distribution key is zero for geocode"+
+                        " %i, using homogenuous distribution for this region" %code)
+            res=res+emis*mask/np.sum(np.sum(mask))
+
+        log.info("Region: %i with emission: %f" %(code,emis))
+        regDistThread=future.Future(distributeRegion,[regdef.data,key.data,code,resKeyArray,emission])         
+        resKeyArray=regDistThread()
+    key.data=resKeyArray
+
+    resultRast=(totFractionRast*key)*regionalTotals.regSum(substance)        
+    resultRast.write(resultRasterPath)
+    print "Result with sum: ",resultRast.sum()," written to disk!"
+
+
+
+
+if __name__=="__main__":
+    main()
+
 
