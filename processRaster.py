@@ -25,6 +25,7 @@ import numpy as np
 #pyAirviro-modules
 from pyAirviro.other import logger, datatable
 from  pyAirviro.other.utilities import ProgressBar
+from pyAirviro.other import logger
 
 try:
     from osgeo import ogr
@@ -41,6 +42,11 @@ version="%prog 1.0"
 
 dataTypes={"Float32":GDT_Float32,
            "Int16":GDT_Int16}
+
+
+#-----------Global variables -----------
+log = None
+# --------------------------------------
 
     
 def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
@@ -74,19 +80,26 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
             feature.Destroy()
 
 
-def reclassBlock(block,classDict):
+def reclassBlock(block,classDict,errDict):
     """Reclassify values in the data block accoring to a mappings given in a dictionary
     @param block: numpy array with data
     @param classDict: dictionary with oldvalue:newvalue pairs
     """
-    classes=np.unique1d(block)
+    try:
+        classes=np.unique(block)
+    except:
+        classes=np.unique1d(block)
     outBlock=block[:,:]
     for c in classes:
         try:
             val=classDict[c]
         except KeyError:
-            raise IOError("No value specified for reclass of "+
-                         " category %i" %c)
+            errDesc="No value specified for reclass of category %i" %c
+            if errDesc in errDict:
+                errDict[errDesc]+=1
+            else:
+                errDict[errDesc]=1
+            continue
         outBlock=np.where(block==c,val,outBlock)
     return outBlock
 
@@ -229,11 +242,13 @@ def main():
                       action="store",dest="filter",
                       help="Filter out data equal or below limit in shape output",
                       default=None)
+
         
     (options, args) = parser.parse_args()
     
     #------------Setting up logging capabilities -----------
     rootLogger=logger.RootLogger(int(options.loglevel))
+    global log
     log=rootLogger.getLogger(sys.argv[0])
 
     #------------Process and validate options---------------
@@ -273,16 +288,16 @@ def main():
 
     #read and process reclass table file
     if options.classTable is not None:
-        classTablePath=path.abspath(options.classTable)
-        classTable=datatable.DataTable(desc=[{"id":"code","type":int},
-                                             {"id":"z0","type":float}],
-                                       keys=["code"])
-        classTable.read(classTablePath)
+        classTable=datatable.DataTable()
+        classTable.read(options.classTable,defaultType=float)
+        oldValueColHeader=classTable.desc[0]["id"]
+        newValueColHeader=classTable.desc[0]["id"]
+        classTable.setKeys([oldValueColHeader])
         log.debug("Successfully read landuse class table")
 
         classDict={}
         for row in classTable.data:
-            classDict[row[classTable.colIndex("code")]]=row[classTable.colIndex("z0")]
+            classDict[row[0]]=row[1]
 
     #Assure that gdal is present
     if not __gdal_loaded__:
@@ -359,16 +374,16 @@ def main():
     #Create and configure output raster data source
     if outFilePath is not None and not options.toShape:
         #Creates a raster dataset with 1 band
-        driver=ds.GetDriver()
-        outDataset = driver.Create(outFilePath, newNcols,newNrows, 1, dataType)
-        if outDataset is None:
+        mem_ds=gdal.GetDriverByName('MEM').Create(outFilePath,newNcols,newNrows,1,dataType)
+        
+        if mem_ds is None:
             print "Error: could not create output raster"
             sys.exit(1)
 
         geotransform = [xll, newCellsizeX, 0, yul, 0, newCellsizeY]
-        outDataset.SetGeoTransform(geotransform)
-        outDataset.SetProjection(proj)
-        outBand = outDataset.GetRasterBand(1)
+        mem_ds.SetGeoTransform(geotransform)
+        mem_ds.SetProjection(proj)
+        outBand = mem_ds.GetRasterBand(1)
         outBand.SetNoDataValue(nodata) #Set nodata-value
 
     #Create and inititialize output vector data source
@@ -412,6 +427,7 @@ def main():
 
     #Loop over block of raster (at least one row in each block)
     rowsOffset=0
+    errDict={}
     pg=ProgressBar(nrows,sys.stdout)
     for i in range(0, nrows, procYBlockSize):
         pg.update(i)
@@ -422,7 +438,7 @@ def main():
      
         if options.classTable is not None:
             try:
-                data=reclassBlock(data,classDict)
+                data=reclassBlock(data,classDict,errDict)
             except IOError as e:
                 log.error(str(e))
                 sys.exit(1)
@@ -451,7 +467,12 @@ def main():
 
         rowsOffset+=procYBlockSize/cellFactor #Update offset
         
-
+    if options.outfileName is not None:
+        outputDriver=ds.GetDriver()
+        output_ds = outputDriver.CreateCopy(options.outfileName,mem_ds,0)
+        output_ds = None
+        mem_ds = None
+        
     if options.toShape:
         shapeFile.Destroy()
         
@@ -462,8 +483,12 @@ def main():
         printGridSummary(inputGridSummary)
         print "\nOutput raster summary"
         printGridSummary(outputGridSummary)
-       
-    
+
+    if errDict !={}:
+        print "Errors/warnings during processing:"
+
+    for err,nerr in errDict.items():
+        print "%s err in %i cells" %(err,nerr)
 
 if __name__=="__main__":
     main()
