@@ -294,7 +294,7 @@ def main():
 
     parser.add_option("--toShape",
                       action="store_true",dest="toShape",
-                      help="Path to output shape file",
+                      help="output as shape file",
                       default=None)
 
     parser.add_option("--filter",
@@ -533,7 +533,7 @@ def main():
         sys.exit(1)
 
     #Create and configure output raster data source
-    if outFilePath is not None and not options.toShape:
+    if outFilePath is not None:
         #Creates a raster dataset with 1 band
 
         mem_ds=gdal.GetDriverByName('MEM').Create(outFilePath,newNcols,newNrows,1,dataType)
@@ -672,7 +672,7 @@ def main():
         outBand.WriteArray(outArray,0,0)
         outBand.FlushCache() #Write data to disk
 
-    if options.outfileName is not None:
+    if options.outfileName is not None and not options.toShape:
         outputDriver=ds.GetDriver()
         output_ds = outputDriver.CreateCopy(options.outfileName,mem_ds,0)
         output_ds = None
