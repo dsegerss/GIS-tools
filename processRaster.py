@@ -254,6 +254,11 @@ def main():
     parser.add_option("-l", "--loglevel",
                       action="store",dest="loglevel",default=2,
                       help="Sets the loglevel (0-3 where 3=full logging)")
+
+    parser.add_option("--no-progress",
+                      action="store_const",dest="progressStream",
+                      const=None,default=sys.stdout,
+                      help="turn off the progress bar")
     
     parser.add_option("-o","--output",
                       action="store",dest="outfileName",default=None,
@@ -625,7 +630,7 @@ def main():
     #Loop over block of raster (at least one row in each block)
     rowsOffset=0
     errDict={}
-    pg=ProgressBar(nrows,sys.stdout)
+    pg=ProgressBar(nrows,options.progressStream)
 
     for i in range(0, nrows, procYBlockSize):
         pg.update(i)
