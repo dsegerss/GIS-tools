@@ -59,6 +59,8 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
     
     for row in np.arange(nrows):
         for col in np.arange(ncols):
+            if block[row,col] == nodata:
+                continue
             if filter is not None:
                 if block[row,col]<=filter:
                     continue
