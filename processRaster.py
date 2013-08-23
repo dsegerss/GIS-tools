@@ -51,7 +51,7 @@ log = None
 # --------------------------------------
 
     
-def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
+def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,fieldName,filter=None):
     """Write a block to a shape-file"""
     nrows,ncols=block.shape
     #start loop at first row, first col
@@ -78,7 +78,7 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(polygon)
-            feature.SetField('value', float(block[row,col]))
+            feature.SetField(fieldName, float(block[row,col]))
             layer.CreateFeature(feature)
             polygon.Destroy()
             feature.Destroy()
@@ -299,6 +299,11 @@ def main():
                       help="output as shape file",
                       default=None)
 
+    parser.add_option("--fieldName", metavar='FIELD',
+                      action="store",dest="fieldName",
+                      help="write data in shape file to FIELD, default is 'value'",
+                      default=None)
+
     parser.add_option("--filter",
                       action="store",dest="filter",
                       help="Filter out data equal or below limit in shape output",
@@ -347,6 +352,14 @@ def main():
             
     else:
         outFilePath=None
+
+    #Validate fieldName option
+    if options.toShape:
+        if options.fieldName == "":
+            parser.error("fieldName can't be an empty string")
+        fieldName = options.fieldName or "value"
+    elif options.fieldName is not None:
+        parser.error("fieldName option only allowed together with shape output")
 
     #Validate filter option and convert filter to numeric value if present
     if not options.toShape and options.filter is not None:
@@ -574,7 +587,7 @@ def main():
             log.error("Could not open output shapefile %s" %outFilePath)
             sys.exit(1)    
         layer=shapeFile.CreateLayer(outFilePath,geom_type=ogr.wkbPolygon)
-        fieldDefn = ogr.FieldDefn('value', ogr.OFTReal)
+        fieldDefn = ogr.FieldDefn(fieldName, ogr.OFTReal)
         layer.CreateField(fieldDefn)
 
 
@@ -657,7 +670,7 @@ def main():
             if options.toShape:
                 blockYll=yul+i*newCellsizeY #newCellsizeY is negative
                 blockXll=xll
-                block2vector(data,layer,blockXll,blockYll,newCellsizeX,newCellsizeY,nodata,filter)
+                block2vector(data,layer,blockXll,blockYll,newCellsizeX,newCellsizeY,nodata,fieldName,filter)
             elif options.toProj is None:
                 outBand.WriteArray(data,0,rowsOffset) #Write block to raster
                 outBand.FlushCache() #Write data to disk
