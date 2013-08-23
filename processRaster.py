@@ -41,9 +41,11 @@ except:
 usage = "usage: %prog [options] "
 version="%prog 1.0"
 
-
-dataTypes={"Float32":GDT_Float32,
-           "Int16":GDT_Int16}
+if __gdal_loaded__:
+    gdalDataTypes={"Float32":GDT_Float32,
+                   "Int16":GDT_Int16}
+    ogrDataTypes={"Real":ogr.OFTReal,
+                  "Integer":ogr.OFTInteger}
 
 
 #-----------Global variables -----------
@@ -291,8 +293,8 @@ def main():
 
     parser.add_option("--dataType",
                       action="store",dest="dataType",
-                      help="Output raster data type",
-                      default="Float32")
+                      help="Output raster/shape data type",
+                      default=None)
 
     parser.add_option("--toShape",
                       action="store_true",dest="toShape",
@@ -541,14 +543,18 @@ def main():
     procXBlockSize=ncols 
 
     #process option for dataType
+    if options.toShape:
+        dataTypes, defaultDataType = ogrDataTypes, 'Real'
+    else:
+        dataTypes, defaultDataType = gdalDataTypes, 'Float32'
     try:
-        dataType=dataTypes[options.dataType]
+        dataType=dataTypes[options.dataType or defaultDataType]
     except KeyError:
         log.error("Unknown datatype choose between: %s" %",".join(dataTypes.keys()))
         sys.exit(1)
 
     #Create and configure output raster data source
-    if outFilePath is not None:
+    if not options.toShape and outFilePath is not None:
         #Creates a raster dataset with 1 band
 
         mem_ds=gdal.GetDriverByName('MEM').Create(outFilePath,newNcols,newNrows,1,dataType)
@@ -587,7 +593,7 @@ def main():
             log.error("Could not open output shapefile %s" %outFilePath)
             sys.exit(1)    
         layer=shapeFile.CreateLayer(outFilePath,geom_type=ogr.wkbPolygon)
-        fieldDefn = ogr.FieldDefn(fieldName, ogr.OFTReal)
+        fieldDefn = ogr.FieldDefn(fieldName, dataType)
         layer.CreateField(fieldDefn)
 
 
@@ -683,7 +689,7 @@ def main():
     if options.toShape:
         shapeFile.Destroy()
 
-    if options.toProj is not None:
+    if not options.toShape and options.toProj is not None:
         outBand.WriteArray(outArray,0,0)
         outBand.FlushCache() #Write data to disk
 
