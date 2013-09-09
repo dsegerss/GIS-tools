@@ -41,9 +41,11 @@ except:
 usage = "usage: %prog [options] "
 version="%prog 1.0"
 
-
-dataTypes={"Float32":GDT_Float32,
-           "Int16":GDT_Int16}
+if __gdal_loaded__:
+    gdalDataTypes={"Float32":GDT_Float32,
+                   "Int16":GDT_Int16}
+    ogrDataTypes={"Real":ogr.OFTReal,
+                  "Integer":ogr.OFTInteger}
 
 
 #-----------Global variables -----------
@@ -51,7 +53,7 @@ log = None
 # --------------------------------------
 
     
-def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
+def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,fieldName,filter=None):
     """Write a block to a shape-file"""
     nrows,ncols=block.shape
     #start loop at first row, first col
@@ -59,6 +61,8 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
     
     for row in np.arange(nrows):
         for col in np.arange(ncols):
+            if block[row,col] == nodata:
+                continue
             if filter is not None:
                 if block[row,col]<=filter:
                     continue
@@ -76,7 +80,7 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(polygon)
-            feature.SetField('value', float(block[row,col]))
+            feature.SetField(fieldName, float(block[row,col]))
             layer.CreateFeature(feature)
             polygon.Destroy()
             feature.Destroy()
@@ -250,6 +254,11 @@ def main():
     parser.add_option("-l", "--loglevel",
                       action="store",dest="loglevel",default=2,
                       help="Sets the loglevel (0-3 where 3=full logging)")
+
+    parser.add_option("--no-progress",
+                      action="store_const",dest="progressStream",
+                      const=None,default=sys.stdout,
+                      help="turn off the progress bar")
     
     parser.add_option("-o","--output",
                       action="store",dest="outfileName",default=None,
@@ -289,12 +298,17 @@ def main():
 
     parser.add_option("--dataType",
                       action="store",dest="dataType",
-                      help="Output raster data type",
-                      default="Float32")
+                      help="Output raster/shape data type",
+                      default=None)
 
     parser.add_option("--toShape",
                       action="store_true",dest="toShape",
-                      help="Path to output shape file",
+                      help="output as shape file",
+                      default=None)
+
+    parser.add_option("--fieldName", metavar='FIELD',
+                      action="store",dest="fieldName",
+                      help="write data in shape file to FIELD, default is 'value'",
                       default=None)
 
     parser.add_option("--filter",
@@ -345,6 +359,14 @@ def main():
             
     else:
         outFilePath=None
+
+    #Validate fieldName option
+    if options.toShape:
+        if options.fieldName == "":
+            parser.error("fieldName can't be an empty string")
+        fieldName = options.fieldName or "value"
+    elif options.fieldName is not None:
+        parser.error("fieldName option only allowed together with shape output")
 
     #Validate filter option and convert filter to numeric value if present
     if not options.toShape and options.filter is not None:
@@ -526,14 +548,18 @@ def main():
     procXBlockSize=ncols 
 
     #process option for dataType
+    if options.toShape:
+        dataTypes, defaultDataType = ogrDataTypes, 'Real'
+    else:
+        dataTypes, defaultDataType = gdalDataTypes, 'Float32'
     try:
-        dataType=dataTypes[options.dataType]
+        dataType=dataTypes[options.dataType or defaultDataType]
     except KeyError:
         log.error("Unknown datatype choose between: %s" %",".join(dataTypes.keys()))
         sys.exit(1)
 
     #Create and configure output raster data source
-    if outFilePath is not None and not options.toShape:
+    if not options.toShape and outFilePath is not None:
         #Creates a raster dataset with 1 band
 
         mem_ds=gdal.GetDriverByName('MEM').Create(outFilePath,newNcols,newNrows,1,dataType)
@@ -572,7 +598,7 @@ def main():
             log.error("Could not open output shapefile %s" %outFilePath)
             sys.exit(1)    
         layer=shapeFile.CreateLayer(outFilePath,geom_type=ogr.wkbPolygon)
-        fieldDefn = ogr.FieldDefn('value', ogr.OFTReal)
+        fieldDefn = ogr.FieldDefn(fieldName, dataType)
         layer.CreateField(fieldDefn)
 
 
@@ -604,7 +630,7 @@ def main():
     #Loop over block of raster (at least one row in each block)
     rowsOffset=0
     errDict={}
-    pg=ProgressBar(nrows,sys.stdout)
+    pg=ProgressBar(nrows,options.progressStream)
 
     for i in range(0, nrows, procYBlockSize):
         pg.update(i)
@@ -655,7 +681,7 @@ def main():
             if options.toShape:
                 blockYll=yul+i*newCellsizeY #newCellsizeY is negative
                 blockXll=xll
-                block2vector(data,layer,blockXll,blockYll,newCellsizeX,newCellsizeY,nodata,filter)
+                block2vector(data,layer,blockXll,blockYll,newCellsizeX,newCellsizeY,nodata,fieldName,filter)
             elif options.toProj is None:
                 outBand.WriteArray(data,0,rowsOffset) #Write block to raster
                 outBand.FlushCache() #Write data to disk
@@ -668,11 +694,11 @@ def main():
     if options.toShape:
         shapeFile.Destroy()
 
-    if options.toProj is not None:
+    if not options.toShape and options.toProj is not None:
         outBand.WriteArray(outArray,0,0)
         outBand.FlushCache() #Write data to disk
 
-    if options.outfileName is not None:
+    if options.outfileName is not None and not options.toShape:
         outputDriver=ds.GetDriver()
         output_ds = outputDriver.CreateCopy(options.outfileName,mem_ds,0)
         output_ds = None
