@@ -76,7 +76,7 @@ def block2vector(block,layer,xll,yll,cellsizeX,cellsizeY,nodata,filter=None):
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(polygon)
-            feature.SetField('value', block[row,col])
+            feature.SetField('value', float(block[row,col]))
             layer.CreateFeature(feature)
             polygon.Destroy()
             feature.Destroy()
