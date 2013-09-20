@@ -81,7 +81,10 @@ def reclassBlock(block,classDict):
     @param block: numpy array with data
     @param classDict: dictionary with oldvalue:newvalue pairs
     """
-    classes=np.unique1d(block)
+    try:
+        classes=np.unique(block)
+    except AttributeError:
+        classes=np.unique1d(block)
     outBlock=block[:,:]
     for c in classes:
         try:
@@ -351,7 +354,7 @@ def main():
 
         classDict={}
         for row in classTable.data:
-            classDict[row[classTable.colIndex("code")]]=row[classTable.colIndex("z0")]
+            classDict[row[classTable.colIndex["code"]]]=row[classTable.colIndex["z0"]]
 
     #Assure that gdal is present
     if not __gdal_loaded__:
