@@ -15,7 +15,7 @@ Average height difference is added as attribute BUILDHGT to result polyline feat
 """
 #Standard modules
 from os import path
-import sys,gc
+import sys,os
 from optparse import OptionParser
 import pdb
 from math import ceil
@@ -54,13 +54,157 @@ version="%prog 1.0"
 #Global constants
 CELLSIZE=75 #Cellsize of spatial index for building contours
 MAXDIST=100  #Maximal distance from road within which buildings are processed
-CSDIST=20   #Max distance between cross-sections
+CSDIST=40   #Max distance between cross-sections
 HEIGHTCORR=1 #Added height to buildings to account for non-flat roofs
 PLOTIND=-1 #Index To plot for debugging
-CSIND=-1 #cross section index to plot for debugging
+CSIND=1 #cross section index to plot for debugging
 #Creating global log
 log=None
 
+
+
+def splitRoad(inRoadFeature,splitLimit,layerDefn):
+    """
+    Split road in sections with same direction
+    Returns list of features with same field values as original feature
+    @param inRoadFeature: road feature to split
+    @param splitLimit: threshold for splitting the road
+    @param outRoadLayer: layer to create new features in    
+    """
+    outRoadFeatures=[]
+    inRoadGeom = inRoadFeature.GetGeometryRef()
+    nPoints=inRoadGeom.GetPointCount()
+    if splitLimit is None or nPoints<=2:
+        outRoadFeatures.append(ogr.Feature(layerDefn))
+        outRoadFeatures[0].SetGeometry(inRoadGeom)
+        outRoadFeatures[0].SetFrom(inRoadFeature)
+        return outRoadFeatures
+
+    x1=inRoadGeom.GetX(0)
+    y1=inRoadGeom.GetY(0)
+    z1=inRoadGeom.GetZ(0)
+
+    x2=inRoadGeom.GetX(1)
+    y2=inRoadGeom.GetY(1)
+    z2=inRoadGeom.GetZ(1)
+
+    #Direction vector of first segment
+    Ulast=np.array([x2-x1,y2-y1])
+    Ulast=Ulast/np.linalg.norm(Ulast)
+    #Convert to polar
+    #lastAng=np.degrees(np.arctan2(U[1],U[0]))
+
+    #Create new feature
+    outRoadFeatures.append(ogr.Feature(layerDefn))
+
+    #create new geometry and add first point
+    newGeom=ogr.Geometry(type=ogr.wkbLineString)
+    newGeom.AddPoint(x1,y1,z1)
+    
+    for pInd in range(1,nPoints):
+        x1=inRoadGeom.GetX(pInd-1)
+        y1=inRoadGeom.GetY(pInd-1)
+        z1=inRoadGeom.GetZ(pInd-1)
+
+        x2=inRoadGeom.GetX(pInd)
+        y2=inRoadGeom.GetY(pInd)
+        z2=inRoadGeom.GetZ(pInd)
+                
+        #Estimate direction vector
+        U=np.array([x2-x1,y2-y1])
+        U=U/np.linalg.norm(U)        
+        diff=np.degrees(np.arccos(np.dot(U,Ulast)))
+        if np.isnan(diff):
+            diff=0
+
+        if diff>180:
+            diff-=180
+        
+        #If direction change is acceptable,
+        #point is added to existing features geometry
+        if abs(diff)<=splitLimit:
+            newGeom.AddPoint(x2,y2,z2)
+        #If to large change, a new feature and geometry is created
+        else:
+            outRoadFeatures[-1].SetFrom(inRoadFeature)
+            outRoadFeatures[-1].SetGeometryDirectly(newGeom)
+            outRoadFeatures.append(ogr.Feature(layerDefn))
+            newGeom=ogr.Geometry(type=ogr.wkbLineString)
+            newGeom.AddPoint(x1,y1,z1)
+            newGeom.AddPoint(x2,y2,z2)
+            Ulast=U
+
+        #if last point, set geometry
+        if pInd==nPoints-1:
+            outRoadFeatures[-1].SetFrom(inRoadFeature)                
+            outRoadFeatures[-1].SetGeometryDirectly(newGeom)
+
+        
+    return outRoadFeatures
+        
+    
+
+def bheight2sect(hgt1,hgt2,angle1):
+    """
+    Returns string list of buildingsheights in 12 sectors relative to north
+    @param: building height on side 1
+    @param: building height in side 2
+    @param: angle relative north to buildings on side 1
+    """
+    
+    nSec=12
+
+    if hgt1 is None or hgt2 is None:
+        return None
+        
+    elif hgt1==hgt2:
+        sectHgt=[hgt1]*nSec
+        sectStr=" ".join(map(str,sectHgt))
+        return sectStr
+
+    elif angle1 is None:
+        return None
+      
+    sectHgt=[None]*nSec
+    secSize=360/nSec
+    sects=range(0,360,secSize)
+    i=0
+    indicesSide1=[]
+
+    if hgt1 is None or hgt2 is None:
+        return None
+    
+    i=int(angle1/secSize)
+    rest=angle1/float(secSize)-i
+    if rest>0.5: 
+        i+=1
+    if i>=nSec:
+        i-=nSec
+                    
+    for j in range(3):
+        if i+j<=11:
+            sectHgt[i+j]=hgt1
+            indicesSide1.append(i+j)
+        else:
+            sectHgt[i+j-nSec]=hgt1
+            indicesSide1.append(i+j-nSec)
+
+    for j in range(-1,-4,-1):
+        if i+j>=0:
+            sectHgt[i+j]=hgt1
+            indicesSide1.append(i+j)
+        else:
+            sectHgt[i+j+nSec]=hgt1
+            indicesSide1.append(i+j+nSec)
+
+    for ind in range(nSec):
+        if ind not in indicesSide1:
+            sectHgt[ind]=hgt2
+
+    sectStr=" ".join(map(str,sectHgt))
+    return sectStr
+ 
+    
 
 def plotSegments(ax,segments,color="black",style="-",width=0.5):
     for seg in segments:
@@ -375,7 +519,9 @@ class Road:
             ang1+=360 #Make sure angle is given in positive direction
         ang2-=90 #relative to north
         if ang2<0:
-            ang2+=360 #Make sure angle is given in positive direction            
+            ang2+=360 #Make sure angle is given in positive direction
+        if np.isnan(ang1) or np.isnan(ang2):
+            return (None,None)
         return (ang1,ang2)
 
     
@@ -414,13 +560,8 @@ class Road:
             roadSegLen=np.sqrt((x2-x1)**2 + (y2-y1)**2)
 
             nCS=int(np.ceil(roadSegLen/float(CSDIST)))
-            if nCS%2==0: #Should be an odd number to get one CS in the middle of the segment
-                nCS+=1
 
-            if nCS>1:
-                segFrac=1/float(nCS-1)
-            else:
-                segFrac=0.5
+            segFrac=1/float(nCS)
 
             P0=self.points[i-1]
             P1=self.points[i]
@@ -430,18 +571,8 @@ class Road:
             roadNormal1=np.array([-1*roadDir[1],roadDir[0]])
             roadNormal2=np.array([roadDir[1],-1*roadDir[0]])
 
-            cs1.append(Segment(PM,PM+roadNormal1*MAXDIST))
-            cs2.append(Segment(PM,PM+roadNormal2*MAXDIST))
-
-            #CS up to the middle of the road (first CS handled by previous segment)
-            for csInd in range(0,int(nCS/2)):
-                Pi=P0+U*csInd*segFrac
-                cs1.append(Segment(Pi,Pi+roadNormal1*MAXDIST))
-                cs2.append(Segment(Pi,Pi+roadNormal2*MAXDIST))
-
-            #CS from the middle to the end of the road
-            for csInd in range(int(nCS/2)+1,nCS):
-                Pi=P0+U*csInd*segFrac
+            for csInd in range(0,nCS):
+                Pi=P0+U*(csInd+0.5)*segFrac
                 cs1.append(Segment(Pi,Pi+roadNormal1*MAXDIST))
                 cs2.append(Segment(Pi,Pi+roadNormal2*MAXDIST))
                 
@@ -458,10 +589,18 @@ def main():
     parser.add_option("-l", "--loglevel",
                       action="store",dest="loglevel",default=2,
                       help="Sets the loglevel (0-3 where 3=full logging)")
+
+    parser.add_option("-f","--format",
+                      action="store",dest="format",default="ESRI Shapefile",
+                      help="Format of road network")
     
-    parser.add_option("--roads",
-                      action="store",dest="roads",
+    parser.add_option("--inRoads",
+                      action="store",dest="inRoads",
                       help="Input road network")
+
+    parser.add_option("--outRoads",
+                      action="store",dest="outRoads",
+                      help="Output road network")
 
     parser.add_option("--buildings",
                       action="store",dest="buildings",
@@ -471,10 +610,10 @@ def main():
                       action="store",dest="topo",
                       help="Input raster DEM")
 
-    parser.add_option("--STL",
-                      action="store",dest="STL",
-                      help="Output STL-file for validation of cross-sections and street canyon geometry")
-        
+    parser.add_option("--split",
+                      action="store",dest="split",
+                      help="Threshold in changed road direction (degrees) for when to split road")
+            
     (options, args) = parser.parse_args()
     
     #------------Setting up logging capabilities -----------
@@ -521,7 +660,22 @@ def main():
     #Init reading of shape-files using OGR
     shapeDriver = ogr.GetDriverByName('ESRI Shapefile')
 
-    
+    #Opening driver for road networks
+    try:
+        driver = ogr.GetDriverByName(options.format)
+    except:
+        log.error("Invalid format for road networks, check ogr documentation")
+        return 1
+
+    if options.split is None:
+        log.info("Do not split roads")
+        splitLimit=None
+    else:
+        splitLimit=float(options.split)
+        log.info("Split roads that change direction"+
+                 " more than %f" %splitLimit)
+
+        
     #extract extent from topo raster
     xmin=topo.xll
     ymin=topo.yll
@@ -540,35 +694,68 @@ def main():
     spatInd.indexBuildingContours(options.buildings)    
 
     #open road network shape-file
-    log.info("Reading road network")    
-    roadShape = shapeDriver.Open(options.roads, update=1)
-    if roadShape is None:
+    log.info("Reading road network")
+    inRoadFile = driver.Open(options.inRoads, update=0)
+
+    if path.exists(options.outRoads):
+        #outFilePath, filename = path.split(path.abspath(options.outRoads))
+        name, ext = path.splitext(options.outRoads)
+        for ext in [".shp",".shx",".dbf",".prj",".sbn",".qpj",".sbx"]:
+            filename=name +ext
+            if path.exists(filename):
+                os.remove(filename)
+        
+    outRoadFile = driver.CreateDataSource(options.outRoads)
+    if inRoadFile is None:
         log.error("Could not open file with input road network")
         return 1
 
-    #Get layer definition and first feature of input road network
-    roadLayer = roadShape.GetLayer()        
-    roadLayerDefn = roadLayer.GetLayerDefn()
-    fieldNames= [roadLayerDefn.GetFieldDefn(i).GetName()
-                 for i in range(roadLayerDefn.GetFieldCount())]
+    if outRoadFile is None:
+        log.error("Could not open file with input road network")
+        return 1
 
+    
+        
+    #Get layer definition and first feature of input road network
+    inRoadLayer = inRoadFile.GetLayer()        
+    inRoadLayerDefn = inRoadLayer.GetLayerDefn()
+
+    outRoadLayer=outRoadFile.CreateLayer("first_layer",geom_type=inRoadLayer.GetGeomType())
+    for fieldInd  in range(inRoadLayerDefn.GetFieldCount()):
+        fieldDefn = inRoadLayerDefn.GetFieldDefn(fieldInd)
+        outRoadLayer.CreateField(fieldDefn)
+
+    outRoadLayerDefn=outRoadLayer.GetLayerDefn()
+    fieldNames= [outRoadLayerDefn.GetFieldDefn(i).GetName()
+                 for i in range(outRoadLayerDefn.GetFieldCount())]
+
+                                     
     log.info("Adding attributes to road feature (if missing)")
     #Add attributes for street canyon geometry
     if "BHGT1" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BHGT1",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BHGT1",ogr.OFTInteger))
     if "BHGT2" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BHGT2",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BHGT2",ogr.OFTInteger))
     if "BHGT1W" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BHGT1W",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BHGT1W",ogr.OFTInteger))
     if "BHGT2W" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BHGT2W",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BHGT2W",ogr.OFTInteger))
     if "BANG1" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BANG1",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BANG1",ogr.OFTInteger))
     if "BANG2" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BANG2",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BANG2",ogr.OFTInteger))
     if "BDIST" not in fieldNames:
-        roadLayer.CreateField(ogr.FieldDefn("BDIST",ogr.OFTInteger))
+        outRoadLayer.CreateField(ogr.FieldDefn("BDIST",ogr.OFTInteger))
+    if "BSECT" not in fieldNames:
+        fieldDefn= ogr.FieldDefn("BSECT",ogr.OFTString)
+        fieldDefn.SetWidth(40)
+        outRoadLayer.CreateField(fieldDefn)
+    if "BSECTW" not in fieldNames:
+        fieldDefn= ogr.FieldDefn("BSECTW",ogr.OFTString)
+        fieldDefn.SetWidth(40)
+        outRoadLayer.CreateField(fieldDefn)
 
+        
     fig1=plt.figure(1)
     ax1=plt.subplot(111)
     ax1.axis('equal')
@@ -577,143 +764,176 @@ def main():
         
     roadInd=0
     noGeom=0
-    roadFeature = roadLayer.GetNextFeature() #get first road feature
+    nsplit=0
+    inRoadFeature = inRoadLayer.GetNextFeature() #get first road feature
     #Loop over all roads
     log.info("Finding nearest facades, setting heights...")
-    pg=ProgressBar(roadLayer.GetFeatureCount(),sys.stdout)
-    while roadFeature:
+    pg=ProgressBar(inRoadLayer.GetFeatureCount(),sys.stdout)
+    while inRoadFeature:
+
+        #name=inRoadFeature.GetFieldAsString("Namn_130")
+        #adt=inRoadFeature.GetFieldAsString("ADT_f_117")        
+        #roadLen=int(float(inRoadFeature.GetFieldAsString("ExtLen")))
+        #print "\n"+name[:6]
+        #print roadLen
+        #if name[:6]=="Landsv" and roadLen ==121:
+        #    global PLOTIND
+        #    PLOTIND=roadInd
+            
         pg.update(roadInd)
-        intersections=[]                
-        roadGeom = roadFeature.GetGeometryRef()
-        road=Road(roadGeom)
-        if roadGeom is None or roadGeom.GetPointCount()==0 or not spatInd.inside(road):
-            noGeom+=1
-            maxHeight1=None
-            maxHeight2=None
-            avgDist=None
-            bAngle1=None
-            bAngle2=None
-            avgHeight1=None
-            avgHeight2=None
-        else:
-            sumHeight1=0
-            sumHeight2=0
-            maxHeight1=0
-            maxHeight2=0
-            sumDist=0
-            #Define crossections along the road,
-            #defined by start and endpoints at both side of the road
-            cs1List,cs2List=road.defineCrossSections()
-            nCS=len(cs1List)
-            log.debug("Defined %i cross sections" %nCS)
-            #Check intersections with building contours for all cross-sections
-            for csInd in range(nCS):
-                cs1=cs1List[csInd]
-                cs2=cs2List[csInd]
-                cs1MidPoint=cs1.P0+0.5*(cs1.P1-cs1.P0)
-                buildingSegments=spatInd.getBuildingSegments(
-                    cs1MidPoint[0],cs1MidPoint[1])
 
-                log.debug("Calculating intersection")
-                if PLOTIND==roadInd and CSIND==csInd:
-                    dist1,Pint1=getIntersectingFacade(ax1,cs1,buildingSegments,True)
-                else:
-                    dist1,Pint1=getIntersectingFacade(ax1,cs1,buildingSegments,False)
-                if Pint1 is None:
-                    log.debug("No intersection on side 1")
-                    height1=0
-                    dist1=MAXDIST
-                else:
-                    log.debug("Intersection1 in (%f,%f,%f)" %(Pint1[0],Pint1[1],Pint1[2]))
-                    height1= spatInd.getBuildingHeight(
-                        Pint1[0],Pint1[1],Pint1[2],topo)+HEIGHTCORR
-                    intersections.append(Pint1[:2])
+        outRoadFeatures=splitRoad(inRoadFeature,splitLimit,outRoadLayer.GetLayerDefn())
+        if len(outRoadFeatures)>1:            
+            log.debug("Raod split into %s parts" %len(outRoadFeatures))
+        nsplit+=len(outRoadFeatures)-1
+        for outRoadFeature in outRoadFeatures:                    
+            intersections=[]
+            outRoadGeom=outRoadFeature.GetGeometryRef()
+            road=Road(outRoadGeom)
+            if outRoadGeom is None or outRoadGeom.GetPointCount()==0 or not spatInd.inside(road):
+                noGeom+=1
+                maxHeight1=None
+                maxHeight2=None
+                avgDist=None
+                bAngle1=None
+                bAngle2=None
+                avgHeight1=None
+                avgHeight2=None
+            else:
+                sumHeight1=0
+                sumHeight2=0
+                maxHeight1=0
+                maxHeight2=0
+                sumDist=0
+                #Define crossections along the road,
+                #defined by start and endpoints at both side of the road
+                cs1List,cs2List=road.defineCrossSections()
+                nCS=len(cs1List)
+                log.debug("Defined %i cross sections" %nCS)
+                #Check intersections with building contours for all cross-sections
+                for csInd in range(nCS):
+                    cs1=cs1List[csInd]
+                    cs2=cs2List[csInd]
+                    cs1MidPoint=cs1.P0+0.5*(cs1.P1-cs1.P0)
+                    buildingSegments=spatInd.getBuildingSegments(
+                        cs1MidPoint[0],cs1MidPoint[1])
 
-                if PLOTIND==roadInd and csInd == CSIND:
-                    plotSegments(ax1,buildingSegments,color='red',width=2.0)
-                    row,col=spatInd.getInd(cs1MidPoint[0],cs1MidPoint[1])             
-                    spatInd.plotCell(ax1,row,col,color="purple",width=2.0)
-                    plotSegments(ax1,[cs1List[csInd]],color="pink",style="-",width=1.0)
+                    log.debug("Calculating intersection")
+                    if PLOTIND==roadInd and CSIND==csInd:
+                        dist1,Pint1=getIntersectingFacade(ax1,cs1,buildingSegments,True)
+                    else:
+                        dist1,Pint1=getIntersectingFacade(ax1,cs1,buildingSegments,False)
+                    if Pint1 is None:
+                        log.debug("No intersection on side 1")
+                        height1=0
+                        dist1=MAXDIST
+                    else:
+                        log.debug("Intersection1 in (%f,%f,%f)" %(Pint1[0],Pint1[1],Pint1[2]))
+                        height1= spatInd.getBuildingHeight(
+                            Pint1[0],Pint1[1],Pint1[2],topo)+HEIGHTCORR
+                        intersections.append(Pint1[:2])
+
+                    if PLOTIND==roadInd and csInd == CSIND:
+                        plotSegments(ax1,buildingSegments,color='red',width=2.0)
+                        row,col=spatInd.getInd(cs1MidPoint[0],cs1MidPoint[1])             
+                        spatInd.plotCell(ax1,row,col,color="purple",width=2.0)
+                        plotSegments(ax1,[cs1List[csInd]],color="pink",style="-",width=1.0)
+                        plt.draw()
+
+
+
+                    cs2MidPoint=cs2.P0+0.5*(cs2.P1-cs2.P0)
+                    buildingSegments=spatInd.getBuildingSegments(
+                        cs2MidPoint[0],cs2MidPoint[1])
+
+                    if PLOTIND==roadInd and csInd == CSIND:
+                        plotSegments(ax1,buildingSegments,color='red',width=2.0)
+                        row,col=spatInd.getInd(cs2MidPoint[0],cs2MidPoint[1])
+                        spatInd.plotCell(ax1,row,col,color="brown",width=2.0)
+                        plotSegments(ax1,[cs2List[csInd]],color="red",style="-",width=1.0)
+                        plt.draw()
+
+                    log.debug("Calculating intersection")
+                    if PLOTIND==roadInd and CSIND==csInd:
+                        dist2,Pint2=getIntersectingFacade(ax1,cs2,buildingSegments,True)
+                    else:
+                        dist2,Pint2=getIntersectingFacade(ax1,cs2,buildingSegments,False)
+
+
+
+                    if Pint2 is None:
+                        log.debug("No intersection on side 2")
+                        height2=0
+                    else:
+                        log.debug("Intersection2 in (%f,%f,%f)" %(Pint2[0],Pint2[1],Pint2[2]))
+                        height2= spatInd.getBuildingHeight(
+                            Pint2[0],Pint2[1],Pint2[2],topo)+HEIGHTCORR
+                        intersections.append(Pint2[:2])
+
+                    sumHeight1+=height1
+                    sumHeight2+=height2
+                    sumDist+=dist1+dist2
+                    maxHeight1=int(max(height1,maxHeight1))
+                    maxHeight2=int(max(height2,maxHeight2))
+                    if PLOTIND==roadInd and CSIND==csInd:
+                        if Pint1 is not None:
+                            ax1.text(Pint1[0],Pint1[1],"Distance=%f" %dist1)
+                        if Pint2 is not None:
+                            ax1.text(Pint2[0],Pint2[1],"Distance=%f" %dist2)
+
+                avgHeight1=int(sumHeight1/float(nCS))
+                avgHeight2=int(sumHeight2/float(nCS))
+                #averaging over both sides of street
+                #distance refers to between facades on opposite sides
+                avgDist=int(round(sumDist/float(nCS)))
+                bAngle1,bAngle2=road.normalAngles()
+
+
+                if PLOTIND>0:
+                    plotSegments(ax1,road.getSegments(),color='grey',width=0.3)
+                if PLOTIND==roadInd:
+                    plotSegments(ax1,road.getSegments(),color='black',width=2.0)
+                    plotSegments(ax1,cs1List,color="green",style="--",width=0.5)
+                    plotSegments(ax1,cs2List,color="green",style="--",width=0.5)
+
+                    X=[intersect[0] for intersect in intersections]
+                    Y=[intersect[1] for intersect in intersections]
+                    if len(X)>0:
+                        ax1.plot(X,Y,"*")
+                    plt.title("Road %i, cross-section %i" %(PLOTIND,CSIND))
                     plt.draw()
-                    
 
+            #building height as list of sectors
+            bsect=bheight2sect(avgHeight1,avgHeight2,bAngle1)
+            bsectw=bheight2sect(maxHeight1,maxHeight2,bAngle1)
 
-                cs2MidPoint=cs2.P0+0.5*(cs2.P1-cs2.P0)
-                buildingSegments=spatInd.getBuildingSegments(
-                    cs2MidPoint[0],cs2MidPoint[1])
-
-                if PLOTIND==roadInd and csInd == CSIND:
-                    plotSegments(ax1,buildingSegments,color='red',width=2.0)
-                    row,col=spatInd.getInd(cs2MidPoint[0],cs2MidPoint[1])
-                    spatInd.plotCell(ax1,row,col,color="brown",width=2.0)
-                    plotSegments(ax1,[cs2List[csInd]],color="red",style="-",width=1.0)
-                    plt.draw()
-
-                log.debug("Calculating intersection")
-                if PLOTIND==roadInd and CSIND==csInd:
-                    dist2,Pint2=getIntersectingFacade(ax1,cs2,buildingSegments,True)
-                else:
-                    dist2,Pint2=getIntersectingFacade(ax1,cs2,buildingSegments,False)
-
-
-
-                if Pint2 is None:
-                    log.debug("No intersection on side 2")
-                    height2=0
-                else:
-                    log.debug("Intersection2 in (%f,%f,%f)" %(Pint2[0],Pint2[1],Pint2[2]))
-                    height2= spatInd.getBuildingHeight(
-                        Pint2[0],Pint2[1],Pint2[2],topo)+HEIGHTCORR
-                    intersections.append(Pint2[:2])
-
-                sumHeight1+=height1
-                sumHeight2+=height2
-                sumDist+=dist1+dist2
-                maxHeight1=int(max(height1,maxHeight1))
-                maxHeight2=int(max(height2,maxHeight2))
-                if PLOTIND==roadInd and CSIND==csInd:
-                    if Pint1 is not None:
-                        ax1.text(Pint1[0],Pint1[1],"Distance=%f" %dist1)
-                    if Pint2 is not None:
-                        ax1.text(Pint2[0],Pint2[1],"Distance=%f" %dist2)
-
-            avgHeight1=int(sumHeight1/float(nCS))
-            avgHeight2=int(sumHeight2/float(nCS))
-            #averaging over both sides of street
-            #distance refers to between facades on opposite sides
-            avgDist=2*int(sumDist/(2*float(nCS)))
-            bAngle1,bAngle2=road.normalAngles()
-
-            if PLOTIND>0:
-                plotSegments(ax1,road.getSegments(),color='grey',width=0.3)
-            if PLOTIND==roadInd:
-                plotSegments(ax1,road.getSegments(),color='black',width=2.0)
-                plotSegments(ax1,cs1List,color="green",style="--",width=0.5)
-                plotSegments(ax1,cs2List,color="green",style="--",width=0.5)
-                              
-                X=[intersect[0] for intersect in intersections]
-                Y=[intersect[1] for intersect in intersections]
-                if len(X)>0:
-                    ax1.plot(X,Y,"*")
-                plt.title("Road %i, cross-section %i" %(PLOTIND,CSIND))
-                plt.draw()
-
-        roadFeature.SetField("BHGT1",avgHeight1)
-        roadFeature.SetField("BHGT2",avgHeight2)
-        roadFeature.SetField("BHGT1W",maxHeight1)
-        roadFeature.SetField("BHGT2W",maxHeight2)
-        roadFeature.SetField("BANG1",bAngle1)
-        roadFeature.SetField("BANG2",bAngle2)
-        roadFeature.SetField("BDIST",avgDist)
-        roadLayer.SetFeature(roadFeature)
-
-        roadFeature.Destroy()
-        roadFeature = roadLayer.GetNextFeature()            
+            outRoadFeature.SetField("BSECT",bsect)
+            outRoadFeature.SetField("BSECTW",bsectw)
+            outRoadFeature.SetField("BHGT1",avgHeight1)
+            outRoadFeature.SetField("BHGT2",avgHeight2)
+            outRoadFeature.SetField("BHGT1W",maxHeight1)
+            outRoadFeature.SetField("BHGT2W",maxHeight2)
+            outRoadFeature.SetField("BANG1",bAngle1)
+            outRoadFeature.SetField("BANG2",bAngle2)
+            outRoadFeature.SetField("BDIST",avgDist)
+            
+            outRoadLayer.CreateFeature(outRoadFeature)
+            outRoadFeature.Destroy()
+        inRoadFeature.Destroy()
+        inRoadFeature = inRoadLayer.GetNextFeature()            
         roadInd+=1
+
+    inRoads=inRoadLayer.GetFeatureCount()
+    outRoads=outRoadLayer.GetFeatureCount()
     #close datasource for building contours
-    roadShape.Destroy()
+    inRoadFile.Destroy()
+    outRoadFile.Destroy()
     pg.finished()
-    plt.show()
+    if PLOTIND>0:
+        plt.show()
+
+    log.info("Read %i roads, wrote %i roads (created %i by splitting)" %(
+        inRoads,outRoads,nsplit))
 
     if noGeom>0:
         log.warning("Found %i roads without geometry" %noGeom)
@@ -721,10 +941,10 @@ def main():
     log.info("Finished")
 
 if __name__=="__main__":
-#    sys.exit(main())
-    try:
-        main()
-    except:
-        import pdb, sys
-        e, m, tb = sys.exc_info()
-        pdb.post_mortem(tb)
+    sys.exit(main())
+    # try:
+    #     main()
+    # except:
+    #     import pdb, sys
+    #     e, m, tb = sys.exc_info()
+    #     pdb.post_mortem(tb)

@@ -4,6 +4,8 @@ import os, sys, subprocess, urllib, time
 from os import path
 from optparse import OptionParser
 
+import pdb
+
 #Docstrings for the option parser
 usage = "usage: %prog --ll '(lon lat') --ur '(lon lat')"
 version="%prog 1.0"
@@ -78,6 +80,7 @@ def main():
             #subprocess.call("wget "+path.join(url,tile))
             urllib.urlcleanup()
 #            print "url is: %s" %
+            pdb.set_trace()
             urllib.urlretrieve(path.join(url,tile),tilePath)
             time.sleep(5)
             sys.stdout.write("done, converting to geotiff...")
