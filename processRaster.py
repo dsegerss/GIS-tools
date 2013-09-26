@@ -144,8 +144,8 @@ def resampleBlock(block,cellFactor,method,nodata):
             raise ValueError("Raster dimensions have to be dividable"+ 
                              "with the cellFactor for resampling")
     
-    newNcols=orgNcols/cellFactor
-    newNrows=orgNrows/cellFactor
+    newNcols=int(orgNcols/cellFactor)
+    newNrows=int(orgNrows/cellFactor)
     newBlock=np.zeros((newNrows,newNcols))
 
     if cellFactor>1:
@@ -459,7 +459,7 @@ def main():
         cellFactor=1
     
     if cellFactor>=1:
-        procYBlockSize=cellFactor
+        procYBlockSize=int(cellFactor)
     else:
         procYBlockSize=1
 
@@ -593,7 +593,7 @@ def main():
     rowsOffset=0
     pg=ProgressBar(nrows,sys.stdout)
 
-    for i in range(0, nrows, procYBlockSize):
+    for i in range(0, nrows, int(procYBlockSize)):
         pg.update(i)
         data = band.ReadAsArray(xoff=colmin, yoff=rowmin+i,
                                 win_xsize=procXBlockSize, 
@@ -650,7 +650,7 @@ def main():
         if options.summarize:
             gridSummary=updateGridSummary(data,outputGridSummary,nodata)
 
-        rowsOffset+=procYBlockSize/cellFactor #Update offset
+        rowsOffset+=int(procYBlockSize/cellFactor) #Update offset
 
     if options.toShape:
         shapeFile.Destroy()
