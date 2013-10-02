@@ -388,11 +388,9 @@ def main():
 
         classDict={}
         for row in classTable.data:
-<<<<<<< HEAD
             classDict[row[classTable.colIndex["code"]]]=row[classTable.colIndex["z0"]]
-=======
-            classDict[row[0]]=row[1]
->>>>>>> c92eacf427b26e6386473d4d708db6d83cfa3d30
+            #classDict[row[0]]=row[1]
+
 
     #Assure that gdal is present
     if not __gdal_loaded__:
