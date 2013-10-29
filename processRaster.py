@@ -113,7 +113,7 @@ def reclassBlock(block, classDict, errDict):
     """
     try:
         classes = np.unique(block)
-    except:
+    except AttributeError:
         classes = np.unique1d(block)
     outBlock = block[:, :]
     for c in classes:
@@ -183,9 +183,8 @@ def resampleBlock(block, cellFactor, method, nodata):
         if orgNcols % cellFactor != 0 or orgNrows % cellFactor != 0:
             raise ValueError("Raster dimensions have to be dividable" +
                              "with the cellFactor for resampling")
-
-    newNcols = orgNcols / cellFactor
-    newNrows = orgNrows / cellFactor
+    newNcols = int(orgNcols / cellFactor)
+    newNrows = int(orgNrows / cellFactor)
     newBlock = np.zeros((newNrows, newNcols))
 
     if cellFactor > 1:
@@ -306,6 +305,16 @@ def main():
                       help="Tab-separated table with code " +
                       "and z0 value for each landuse class")
 
+    parser.add_option("--reclassFromColumn",
+                      action="store",dest="reclassFromColumn",
+                      help="Header of reclass table column containing values to " +
+                      "reclass (default is to use first column of classTable)")
+
+    parser.add_option("--reclassToColumn",
+                      action="store",dest="reclassToColumn",
+                      help="Header of reclass table column containing codes," +
+                      " default is to use first column (default is to use second column of classTable)")
+
     parser.add_option("--resample",
                       action="store", dest="cellFactor",
                       help="Resample grid by dividing cellsize with an" +
@@ -413,16 +422,32 @@ def main():
 
     #read and process reclass table file
     if options.classTable is not None:
-        classTable = datatable.DataTable()
-        classTable.read(options.classTable, defaultType=float)
-        oldValueColHeader = classTable.desc[0]["id"]
-        newValueColHeader = classTable.desc[0]["id"]
-        classTable.setKeys([oldValueColHeader])
+        reclassFromColumn = options.reclassFromColumn
+        reclassToColumn = options.reclassToColumn
+
+        if reclassFromColumn is not None and reclassToColumn is not None:
+
+            desc = [{"id": reclassFromColumn, "type": float},
+                    {"id": reclassToColumn, "type": float}]
+
+            classTable = datatable.DataTable(desc=desc)
+            classTable.read(options.classTable)
+        else:
+            classTable = datatable.DataTable()
+            classTable.read(options.classTable)
+            reclassFromColumn = classTable.desc[0]["id"]
+            reclassToColumn = classTable.desc[1]["id"]
+            classTable.convertCol(reclassFromColumn, float)
+            classTable.convertCol(reclassToColumn, float)
+
+        classTable.setKeys([reclassFromColumn])
+
         log.debug("Successfully read landuse class table")
 
         classDict = {}
         for row in classTable.data:
-            classDict[row[0]] = row[1]
+            classDict[row[classTable.colIndex[reclassFromColumn]]
+                      ] = row[classTable.colIndex[reclassToColumn]]
 
     #Assure that gdal is present
     if not __gdal_loaded__:
@@ -527,7 +552,8 @@ def main():
         cellFactor = 1
 
     if cellFactor >= 1:
-        procYBlockSize = cellFactor
+        procYBlockSize = int(cellFactor)
+
     else:
         procYBlockSize = 1
 
@@ -675,7 +701,7 @@ def main():
     errDict = {}
     pg = ProgressBar(nrows, options.progressStream)
 
-    for i in range(0, nrows, procYBlockSize):
+    for i in range(0, nrows, int(procYBlockSize)):
         pg.update(i)
         data = band.ReadAsArray(xoff=colmin, yoff=rowmin + i,
                                 win_xsize=procXBlockSize,
@@ -737,7 +763,7 @@ def main():
                                                   outputGridSummary,
                                                   nodata)
 
-        rowsOffset += procYBlockSize / cellFactor  # Update offset
+        rowsOffset += int(procYBlockSize / cellFactor)  # Update offset
 
     if options.toShape:
         shapeFile.Destroy()
