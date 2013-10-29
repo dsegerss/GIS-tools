@@ -93,7 +93,7 @@ def reclassBlock(block,classDict,errDict):
     """
     try:
         classes=np.unique(block)
-    except:
+    except AttributeError:
         classes=np.unique1d(block)
     outBlock=block[:,:]
     for c in classes:
@@ -158,8 +158,8 @@ def resampleBlock(block,cellFactor,method,nodata):
             raise ValueError("Raster dimensions have to be dividable"+ 
                              "with the cellFactor for resampling")
     
-    newNcols=orgNcols/cellFactor
-    newNrows=orgNrows/cellFactor
+    newNcols=int(orgNcols/cellFactor)
+    newNrows=int(orgNrows/cellFactor)
     newBlock=np.zeros((newNrows,newNcols))
 
     if cellFactor>1:
@@ -415,7 +415,9 @@ def main():
 
         classDict={}
         for row in classTable.data:
-            classDict[row[0]]=row[1]
+            classDict[row[classTable.colIndex["code"]]]=row[classTable.colIndex["z0"]]
+            #classDict[row[0]]=row[1]
+
 
     #Assure that gdal is present
     if not __gdal_loaded__:
@@ -521,7 +523,7 @@ def main():
         cellFactor=1
     
     if cellFactor>=1:
-        procYBlockSize=cellFactor
+        procYBlockSize=int(cellFactor)
     else:
         procYBlockSize=1
 
@@ -660,7 +662,7 @@ def main():
     errDict={}
     pg=ProgressBar(nrows,options.progressStream)
 
-    for i in range(0, nrows, procYBlockSize):
+    for i in range(0, nrows, int(procYBlockSize)):
         pg.update(i)
         data = band.ReadAsArray(xoff=colmin, yoff=rowmin+i,
                                 win_xsize=procXBlockSize, 
@@ -717,8 +719,13 @@ def main():
         if options.summarize:
             gridSummary=updateGridSummary(data,outputGridSummary,nodata)
 
+<<<<<<< HEAD
+        rowsOffset+=int(procYBlockSize/cellFactor) #Update offset
+
+=======
         rowsOffset+=procYBlockSize/cellFactor #Update offset
                 
+>>>>>>> c92eacf427b26e6386473d4d708db6d83cfa3d30
     if options.toShape:
         shapeFile.Destroy()
 

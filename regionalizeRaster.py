@@ -3,7 +3,7 @@
 
 #standard modules
 import os,sys
-
+from optparse import OptionParser
 #third party modules
 import numpy as np 
 
@@ -50,6 +50,10 @@ def distributeRegion(argList):
                 code,regionalTotal)+"the distribution is homogenious over the whole region")
         result=result+onesRast/regMaskSum      
     return result
+
+#Docstrings for the option parser
+usage = "usage: %prog [options] "
+version="%prog 1.0"
 
 
 def main():
@@ -127,8 +131,9 @@ def main():
     
     stat=DataTable()
     stat.read(options.stat,defaultType=float)
+    print stat.desc
     stat.convertCol(stat.desc[0]["id"],int)
-
+    print stat.desc
     #Set first column as unique id for rows
     stat.setKeys([stat.desc[0]["id"]])
 
@@ -139,6 +144,7 @@ def main():
     log.info("Consistency och completeness check for codes in regdef and statistics")
     #Create list of codes in raster
     regdefCodes=regdef.unique()
+    regdefCodes=map(int,regdefCodes)
 
     if 0.0 in regdefCodes:
         regdefCodes.remove(0.0)
@@ -166,7 +172,7 @@ def main():
 
     #Assuring that the regional raster IDs are present in the regional statistics
     for code in regdefCodes:
-        if code not in codeNumList:
+        if code not in statRegCodes:
             log.error("Input Error: ID:"+str(code)+
                      " in region raster is not represented in regional totals!")
             errFound=True
@@ -178,30 +184,31 @@ def main():
     res=np.zeros(key.data.shape)
     log.info("Regionalizing key raster")
     for code in regdefCodes:
-        emis=stat.lookup(code,colId)
+        emis=stat.lookup(colId,code)
+        log.debug("Statistics for reg %i: %f" %(code,emis))
         mask=np.array(regdef.data==code)
         regKey=mask*key.data
         regSum=np.sum(np.sum(regKey))
         if regSum>0:
-            res=res+regKey/regSum
+            res=res+emis*regKey/regSum
         else:
             log.warning("Distribution key is zero for geocode"+
                         " %i, using homogenuous distribution for this region" %code)
             res=res+emis*mask/np.sum(np.sum(mask))
+            
+    key.data=res
 
-        log.info("Region: %i with emission: %f" %(code,emis))
-        regDistThread=future.Future(distributeRegion,[regdef.data,key.data,code,resKeyArray,emission])         
-        resKeyArray=regDistThread()
-    key.data=resKeyArray
-
-    resultRast=(totFractionRast*key)*regionalTotals.regSum(substance)        
-    resultRast.write(resultRasterPath)
-    print "Result with sum: ",resultRast.sum()," written to disk!"
-
-
-
+    #resultRast=(totFractionRast*key)*regionalTotals.regSum(substance)        
+    key.write(options.outfileName)
+    log.info("Result with sum: %f written" %res.sum())
 
 if __name__=="__main__":
     main()
 
+    # try:
+    #     main()
+    # except:
+    #     import pdb, sys
+    #     e, m, tb = sys.exc_info()
+    #     pdb.post_mortem(tb)
 
