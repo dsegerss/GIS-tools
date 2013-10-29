@@ -277,6 +277,16 @@ def main():
                       help="Tab-separated table with code "+
                       "and z0 value for each landuse class")
 
+    parser.add_option("--reclassFromColumn",
+                      action="store",dest="reclassFromColumn",
+                      help="Header of reclass table column containing values to " +
+                      "reclass (default is to use first column of classTable)")
+
+    parser.add_option("--reclassToColumn",
+                      action="store",dest="reclassToColumn",
+                      help="Header of reclass table column containing codes," +
+                      " default is to use first column (default is to use second column of classTable)")
+
     parser.add_option("--resample",
                       action="store",dest="cellFactor",
                       help="Resample grid by dividing cellsize with an integer factor. Factor <1 results in refinement. Reprojection uses temporary refinement")
@@ -379,11 +389,28 @@ def main():
 
     #read and process reclass table file
     if options.classTable is not None:
-        classTable=datatable.DataTable()
-        classTable.read(options.classTable,defaultType=float)
-        oldValueColHeader=classTable.desc[0]["id"]
-        newValueColHeader=classTable.desc[0]["id"]
-        classTable.setKeys([oldValueColHeader])
+        reclassFromColumn = options.reclassFromColumn
+        reclassToColumn = options.reclassToColumn
+
+        if reclassFromColumn is not None and reclassToColumn is not None:
+
+            desc=[{"id":reclassFromColumn,"type":float},
+                  {"id":reclassToColumn,"type":float}]
+
+            classTable=datatable.DataTable(desc=desc)                  
+            classTable.read(options.classTable)
+        
+        else:
+            classTable=datatable.DataTable()                  
+            classTable.read(options.classTable)
+            reclassFromColumn=classTable.desc[0]["id"]
+            reclassToColumn=classTable.desc[1]["id"]
+            classTable.convertCol(reclassFromColumn,float)
+            classTable.convertCol(reclassToColumn,float)
+
+        classTable.setKeys([reclassFromColumn])
+
+        
         log.debug("Successfully read landuse class table")
 
         classDict={}
@@ -423,7 +450,8 @@ def main():
     if rot1!=0 or rot2!=0:
         print 'Rotated rasters are not supported by pyAirviro.geo.raster'
         sys.exit(1)
-        
+
+
     if abs(cellsizeX)!=abs(cellsizeY):
         print 'Non-homogenous cellsizes are not supported by pyAirviro.geo.raster'
         sys.exit(1)
