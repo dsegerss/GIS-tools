@@ -719,13 +719,8 @@ def main():
         if options.summarize:
             gridSummary=updateGridSummary(data,outputGridSummary,nodata)
 
-<<<<<<< HEAD
         rowsOffset+=int(procYBlockSize/cellFactor) #Update offset
 
-=======
-        rowsOffset+=procYBlockSize/cellFactor #Update offset
-                
->>>>>>> c92eacf427b26e6386473d4d708db6d83cfa3d30
     if options.toShape:
         shapeFile.Destroy()
 
