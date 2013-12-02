@@ -145,26 +145,28 @@ def updateGridSummary(block, gridSummary, nodata):
     return gridSummary
 
 
-def printGridSummary(gridSummary):
+def printGridSummary(gridSummary, prefix=""):
     """Print summary to stdout
     @param gridSummary: dictionary with entries for sum, mean,
     number of negative values,number of nodata values, nodata value
     """
+    if prefix != "":
+        prefix += ": "
     g = gridSummary
     g["mean"] = g["sum"] / float(g["nrows"] * g["ncols"] - g["nnodata"])
     print 40 * "_"
-    print "(xmin,xmax): (%f,%f)" % (g["xll"],
+    print prefix + "(xmin,xmax): (%f,%f)" % (g["xll"],
                                     g["xll"] + g["ncols"] * g["cellsizeX"])
-    print "(ymin,ymax): (%f,%f)" % (g["yll"],
+    print prefix + "(ymin,ymax): (%f,%f)" % (g["yll"],
                                     g["yll"] + g["nrows"] * g["cellsizeY"])
-    print "(cellsizeX,cellsizeY): (%f,%f)" % (g["cellsizeX"], g["cellsizeY"])
-    print "(ncols,nrows): (%i,%i)" % (g["ncols"], g["nrows"])
-    print "nodata value: %f" % g["nodatavalue"]
+    print prefix + "(cellsizeX,cellsizeY): (%f,%f)" % (g["cellsizeX"], g["cellsizeY"])
+    print prefix + "(ncols,nrows): (%i,%i)" % (g["ncols"], g["nrows"])
+    print prefix + "nodata value: %f" % g["nodatavalue"]
     print 40 * "-" + "\nStatistics:"
-    print "Sum: %f" % g["sum"]
-    print "Mean: %f" % g["mean"]
-    print "Number of nodata values: %i" % g["nnodata"]
-    print "Number of negative values: %i" % g["nnegative"]
+    print prefix + "Sum: %f" % g["sum"]
+    print prefix + "Mean: %f" % g["mean"]
+    print prefix + "Number of nodata values: %i" % g["nnodata"]
+    print prefix + "Number of negative values: %i" % g["nnegative"]
     print 40 * "_"
 
 
@@ -193,6 +195,7 @@ def resampleBlock(block, cellFactor, method, nodata):
                 for col in range(newNcols):
                     cells = block[row * cellFactor:(row + 1) * cellFactor,
                                   col * cellFactor: (col + 1) * cellFactor]
+                    cells = np.where(cells != nodata, cells, 0)
                     newBlock[row, col] = cells.sum()
         elif method == "mean":
             for row in range(newNrows):
@@ -782,9 +785,9 @@ def main():
 
     if options.summarize:
         print "\nInput raster summary"
-        printGridSummary(inputGridSummary)
+        printGridSummary(inputGridSummary, prefix="input")
         print "\nOutput raster summary"
-        printGridSummary(outputGridSummary)
+        printGridSummary(outputGridSummary, prefix="output")
 
     if errDict != {}:
         print "Errors/warnings during processing:"
