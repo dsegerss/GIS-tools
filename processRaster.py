@@ -766,6 +766,7 @@ def main():
                                                   outputGridSummary,
                                                   nodata)
 
+
         rowsOffset += int(procYBlockSize / cellFactor)  # Update offset
 
     if options.toShape:
