@@ -251,14 +251,18 @@ def resampleBlock(block, cellFactor, method, nodata):
     return newBlock
 
 
-def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans):
+def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
     for inRow in range(blockDef["nrows"]):
         for inCol in range(blockDef["ncols"]):
             val = block[inRow, inCol]
+            #cell centre in source SRS
             x_in = blockDef["xll"] + (inCol + 0.5) * blockDef["cellsize"]
             y_in = blockDef["yul"] - (inRow + 0.5) * blockDef["cellsize"]
+
+            #cell centre in target SRS
             x_out, y_out, z_out = coordTrans.TransformPoint(x_in, y_in)
 
+            #check if outside target extent
             if((x_out < outDef["xll"] or y_out < outDef["yll"]) or
                (x_out > outDef["xur"] or y_out > outDef["yul"])):
                 continue
@@ -271,6 +275,7 @@ def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans):
                 outRol -= 1
             if val != blockDef["nodata"]:
                 outArray[outRow, outCol] += val
+                nvals[outRow, outCol] += 1
 
 
 def main():
@@ -452,6 +457,17 @@ def main():
             classDict[row[classTable.colIndex[reclassFromColumn]]
                       ] = row[classTable.colIndex[reclassToColumn]]
 
+    if options.resamplingMethod not in ('sum', 'mean', 'majority'):
+        log.error(
+            "Invalid resampling method, valid options are 'sum' " +
+            "and 'mean' and 'majority'")
+
+    if options.resamplingMethod == 'majority' and options.toProj is not None:
+        log.error(
+            "Resampling method 'majority' not possible to " +
+            "combine with reprojection")
+        sys.exit(1)
+
     #Assure that gdal is present
     if not __gdal_loaded__:
         raise OSError("Function readGDAL needs GDAL with python bindings")
@@ -601,7 +617,7 @@ def main():
                 re.compile("nrows\s*([0-9]*)").search(header).group(1))
             newCellsizeX = float(
                 re.compile("cellsize\s*([0-9]*)").search(header).group(1))
-            newCellsizeY =- 1 * newCellsizeX
+            newCellsizeY = -1 * newCellsizeX
             newNodata = float(
                 re.compile("NODATA_value\s*(.*?)\n").search(header).group(1))
             newXll = float(
@@ -650,8 +666,9 @@ def main():
         outBand = mem_ds.GetRasterBand(1)
         outBand.SetNoDataValue(newNodata)  # Set nodata-value
 
-    if options.fromProj != options.toProj:
+    if options.toProj is not None:
         outArray = np.zeros((newNrows, newNcols))
+        nvals = np.zeros((newNrows, newNcols))
         outDef = {"ncols": newNcols,
                   "nrows": newNrows,
                   "xll": newXll,
@@ -748,7 +765,8 @@ def main():
                            cellFactor,
                            blockDef,
                            outDef,
-                           coordTrans)
+                           coordTrans,
+                           nvals)
 
         if outFilePath is not None:
             if options.toShape:
@@ -766,20 +784,22 @@ def main():
                                                   outputGridSummary,
                                                   nodata)
 
-
         rowsOffset += int(procYBlockSize / cellFactor)  # Update offset
 
     if options.toShape:
         shapeFile.Destroy()
 
     if not options.toShape and options.toProj is not None:
+        if options.resamplingMethod == "mean":
+            outArray = np.where(nvals > 0, outArray / nvals, outArray)
+
         outBand.WriteArray(outArray, 0, 0)
         outBand.FlushCache()  # Write data to disk
 
     if options.outfileName is not None and not options.toShape:
         outputDriver = ds.GetDriver()
         output_ds = outputDriver.CreateCopy(options.outfileName, mem_ds, 0)
-        output_ds =  None
+        output_ds = None
         mem_ds = None
 
     pg.finished()
