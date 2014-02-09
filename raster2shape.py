@@ -281,7 +281,7 @@ def main():
     nodata = band.GetNoDataValue()
     #If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
-        nodata -= 9999
+        nodata = -9999
 
     rowmin = 0
     colmin = 0

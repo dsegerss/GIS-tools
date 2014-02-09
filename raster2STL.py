@@ -243,6 +243,7 @@ def main():
                       help="Add buffer distance to topo, " +
                       "damping out differences in elevation")
 
+
     (options, args) = parser.parse_args()
 
     #------------Setting up logging capabilities -----------
@@ -316,7 +317,7 @@ def main():
     nodata = band.GetNoDataValue()
     #If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
-        nodata = 9999
+        nodata = -9999
 
     #Processing of data is made for blocks of the following size
     #two rows are processed at a time since triangles
@@ -338,6 +339,11 @@ def main():
             data = band.ReadAsArray(xoff=0, yoff=i,
                                     win_xsize=procXBlockSize,
                                     win_ysize=procYBlockSize)
+            if nodata in data:
+                log.error("Nodata value found in raster," +
+                          " this should be interpolated before" +
+                          " converting to STL")
+                sys.exit(1)
 
             # newCellsizeY is negative
             blockYll = yul + (procYBlockSize + i) * cellsizeY
@@ -374,6 +380,7 @@ def main():
             rightBoundary = band.ReadAsArray(xoff=ncols - 1, yoff=0,
                                          win_xsize=1,
                                          win_ysize=nrows)
+
 
             rightBuffer = rightBoundary[:]
             for i in range(1, bufferCells):

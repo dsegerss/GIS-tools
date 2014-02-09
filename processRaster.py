@@ -272,7 +272,7 @@ def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans, nv
             if outRow == outDef["nrows"]:
                 outRow -= 1
             if outCol == outDef["ncols"]:
-                outRol -= 1
+                outCol -= 1
             if val != blockDef["nodata"]:
                 outArray[outRow, outCol] += val
                 nvals[outRow, outCol] += 1
