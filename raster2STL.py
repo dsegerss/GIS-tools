@@ -15,11 +15,11 @@ Convert raster into STL-format
 from os import path
 import sys
 from optparse import OptionParser
+import logging
 
 import numpy as np
 
 #pyAirviro-modules
-from pyAirviro.other import logger
 from  pyAirviro.other.utilities import ProgressBar
 
 try:
@@ -34,15 +34,13 @@ except:
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
 
+log = logging.getLogger(__name__)
+
 if __gdal_loaded__:
     gdalDataTypes = {"Float32": GDT_Float32,
                      "Int16": GDT_Int16}
     ogrDataTypes = {"Real": ogr.OFTReal,
                     "Integer": ogr.OFTInteger}
-
-#-----------Global variables -----------
-log = None
-# --------------------------------------
 
 
 class Point:
@@ -208,9 +206,10 @@ def main():
                       action="store_true", dest="doc",
                       help="Prints more detailed documentation and exit")
 
-    parser.add_option("-l", "--loglevel",
-                      action="store", dest="loglevel", default=2,
-                      help="Sets the loglevel (0-3 where 3=full logging)")
+    parser.add_option("-v", "--verbose",
+                      action="store_const", const=logging.INFO,
+                      dest="loglevel", default=logging.WARNING,
+                      help="Produce verbose output")
 
     parser.add_option("--no-progress",
                       action="store_const", dest="progressStream",
@@ -243,13 +242,11 @@ def main():
                       help="Add buffer distance to topo, " +
                       "damping out differences in elevation")
 
-
     (options, args) = parser.parse_args()
 
-    #------------Setting up logging capabilities -----------
-    rootLogger = logger.RootLogger(int(options.loglevel))
-    global log
-    log = rootLogger.getLogger(sys.argv[0])
+    # configuring logging
+    FORMAT = '%(levelname) %(message)s'
+    logging.basicConfig(format=FORMAT)
 
     #------------Process and validate options---------------
     if options.doc:

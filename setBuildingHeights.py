@@ -1,26 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: latin-1 -*-
-doc="""
-********************************************************************************
+"""
+******************************************************************
 Name: setBuildingHeights.py
 Created: 22 Mar 2013
 Author: David Segersson
 
 Description
---------------------------------------------------------------------------------
+------------------------------------------------------------------
 Set building height as attribute to 3D line features
 Height is read from z-coordinate of lines, and from a raster DEM
 Difference between building z and DEM z is calculated for all vertices
-Average height difference is added as attribute BUILDHGT to result polyline feature class
+Average height difference is added as attribute BUILDHGT to result
+polyline feature class
 """
 #Standard modules
 from os import path
-import sys,os
+import sys
+import os
 from optparse import OptionParser
-import pdb
 from math import ceil
-import shutil
-import glob
 
 #pyAirviro-modules
 from pyAirviro.other import logger
@@ -28,12 +27,12 @@ from  pyAirviro.other.utilities import ProgressBar
 from pyAirviro.geo.raster import readGDAL
 
 #help module for this script
-from geometry import Segment,perp2D,intersect2D_2Segments
+from geometry import Segment, intersect2D_2Segments
 
 #plot modules
 from matplotlib import pyplot as plt
-from matplotlib.path import Path
-import matplotlib.patches as Patches
+#from matplotlib.path import Path
+#import matplotlib.patches as Patches
 
 import numpy as np
 

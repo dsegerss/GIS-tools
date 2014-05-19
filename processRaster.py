@@ -21,6 +21,7 @@ smaller 'sparse' raster
 from os import path
 import sys
 import re
+import logging
 from optparse import OptionParser
 
 import numpy as np
@@ -28,7 +29,7 @@ import numpy as np
 #pyAirviro-modules
 from pyAirviro.other import datatable
 from  pyAirviro.other.utilities import ProgressBar
-from pyAirviro.other import logger
+from pyAirviro.other.logging import get_loglevel
 
 try:
     from osgeo import osr
@@ -286,9 +287,10 @@ def main():
                       action="store_true", dest="doc",
                       help="Prints more detailed documentation and exit")
 
-    parser.add_option("-l", "--loglevel",
-                      action="store", dest="loglevel", default=2,
-                      help="Sets the loglevel (0-3 where 3=full logging)")
+    parser.add_option("-v",
+                      action="store_const", const=logging.DEBUG,
+                      dest="loglevel", default=get_loglevel(),
+                      help="Produce verbose output")
 
     parser.add_option("--no-progress",
                       action="store_const", dest="progressStream",
@@ -379,9 +381,12 @@ def main():
     (options, args) = parser.parse_args()
 
     #------------Setting up logging capabilities -----------
-    rootLogger = logger.RootLogger(int(options.loglevel))
-    global log
-    log = rootLogger.getLogger(sys.argv[0])
+    # Setup logging
+    logging.basicConfig(
+        format='%(levelname)s:%(name)s: %(message)s',
+        level=options.loglevel,
+    )
+    log = logging.getLogger(__name__)
 
     #------------Process and validate options---------------
     if options.doc:
