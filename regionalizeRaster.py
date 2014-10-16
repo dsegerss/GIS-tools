@@ -15,20 +15,22 @@ Redistribute a raster so that regions are scaled to match a statistics table.
 in the statistics table.
 """
 
-#standard modules
+# standard modules
 import sys
 from optparse import OptionParser
-#third party modules
+import logging
+
+# third party modules
 import numpy as np
 
-#pyAirviro
+# pyAirviro
 from pyAirviro.geo.raster import Raster
-from pyAirviro.other import logger
+from pyAirviro.other.logging import get_loglevel
 from pyAirviro.other.datatable import DataTable
 
-#------Global variables--------
+# ------Global variables--------
 log = None
-#-----------------------------
+# -----------------------------
 
 
 def distributeRegion(argList):
@@ -41,8 +43,8 @@ def distributeRegion(argList):
     mask = np.array(regionArray == code)
     regKey = mask * data
     regSum = np.sum(np.sum(regKey))
-    #These two are put here to ensure that all threads are executed
-    #equally fast.
+    # These two are put here to ensure that all threads are executed
+    # equally fast.
     onesRast = mask * (np.ones(mask.shape) * 1.0)
     regMaskSum = np.sum(np.sum(onesRast))
     if regSum > 0:
@@ -55,22 +57,23 @@ def distributeRegion(argList):
         result = result + onesRast / regMaskSum
     return result
 
-#Docstrings for the option parser
+# Docstrings for the option parser
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
 
 
 def main():
-    #-----------Setting up and unsing option parser-----------------------
+    # -----------Setting up and unsing option parser-----------------------
     parser = OptionParser(usage=usage, version=version)
 
     parser.add_option("-d", "--doc",
                       action="store_true", dest="doc",
                       help="Prints more detailed documentation and exit")
 
-    parser.add_option("-l", "--loglevel",
-                      action="store", dest="loglevel", default=2,
-                      help="Sets the loglevel (0-3 where 3=full logging)")
+    parser.add_option("-v",
+                      action="store_const", const=logging.DEBUG,
+                      dest="loglevel", default=get_loglevel(),
+                      help="Produce verbose output")
 
     parser.add_option("-o", "--output",
                       action="store", dest="outfileName", default=None,
@@ -98,12 +101,12 @@ def main():
 
     (options, args) = parser.parse_args()
 
-    #------------Setting up logging capabilities -----------
+    # ------------Setting up logging capabilities -----------
     rootLogger = logger.RootLogger(int(options.loglevel))
     global log
     log = rootLogger.getLogger(sys.argv[0])
 
-    #------------Process and validate options---------------
+    # ------------Process and validate options---------------
     if options.doc:
         print __doc__
         sys.exit()
@@ -140,16 +143,16 @@ def main():
     print stat.desc
     stat.convertCol(stat.desc[0]["id"], int)
     print stat.desc
-    #Set first column as unique id for rows
+    # Set first column as unique id for rows
     stat.setKeys([stat.desc[0]["id"]])
 
-    #Remove nodata in rasters
+    # Remove nodata in rasters
     key.nodataToZero()
     regdef.nodataToZero()
 
     log.info("Consistency och completeness check for codes " +
              "in regdef and statistics")
-    #Create list of codes in raster
+    # Create list of codes in raster
     regdefCodes = regdef.unique()
     regdefCodes = map(int, regdefCodes)
 
@@ -171,14 +174,14 @@ def main():
 
     errFound = False
     for code in statRegCodes:
-        #Assuring that the regional codes are present in regdef
+        # Assuring that the regional codes are present in regdef
         if code not in regdefCodes:
             log.error("Input Error: code:" + str(int(code)) +
                      "in reg totals is not represented in regional raster")
             errFound = True
 
-    #Assuring that the regional raster IDs are present
-    #in the regional statistics
+    # Assuring that the regional raster IDs are present
+    # in the regional statistics
     for code in regdefCodes:
         if code not in statRegCodes:
             log.error("Input Error: ID:" + str(code) +
@@ -189,8 +192,8 @@ def main():
     if errFound:
         sys.exit(1)
 
-    #For all regions, calculate the regional sum,
-    #set the key values to key/regSum
+    # For all regions, calculate the regional sum,
+    # set the key values to key/regSum
     res = np.zeros(key.data.shape)
     log.info("Regionalizing key raster")
     for code in regdefCodes:
@@ -209,16 +212,9 @@ def main():
 
     key.data = res
 
-    #resultRast=(totFractionRast*key)*regionalTotals.regSum(substance)
+    # resultRast=(totFractionRast*key)*regionalTotals.regSum(substance)
     key.write(options.outfileName)
     log.info("Result with sum: %f written" % res.sum())
 
 if __name__ == "__main__":
     main()
-
-    # try:
-    #     main()
-    # except:
-    #     import pdb, sys
-    #     e, m, tb = sys.exc_info()
-    #     pdb.post_mortem(tb)

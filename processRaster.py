@@ -176,7 +176,8 @@ def resampleBlock(block, cellFactor, method, nodata):
     Resample the numpy array to a coarser or finer grid
     @param block: a numpy array
     @param cellFactor: factor to divide the cell side by, if < 1 -> refinement
-    @param method: method for resampling to coarse grid (sum, mean or majority)
+    @param method: method for resampling to coarse grid:
+    (sum, mean, majority, count)
     @param nodata: nodata value
     """
     orgNrows = block.shape[0]
@@ -218,6 +219,13 @@ def resampleBlock(block, cellFactor, method, nodata):
                             maxCount = count
                             maxCountVal = val
                     newBlock[row, col] = maxCountVal
+        elif method == "count":
+            for row in range(newNrows):
+                for col in range(newNcols):
+                    cells = block[row * cellFactor:(row + 1) * cellFactor,
+                                  col * cellFactor: (col + 1) * cellFactor]
+                    cells = np.where(cells > 0, cells, 0)
+                    newBlock[row, col] = cells.sum()
         else:
             raise IOError("Resampling method " +
                           "%s invalid for coarsening" % method)
@@ -316,26 +324,30 @@ def main():
                       "and z0 value for each landuse class")
 
     parser.add_option("--reclassFromColumn",
-                      action="store",dest="reclassFromColumn",
-                      help="Header of reclass table column containing values to " +
+                      action="store", dest="reclassFromColumn",
+                      help="Header of reclass table column " +
+                      "containing values to " +
                       "reclass (default is to use first column of classTable)")
 
     parser.add_option("--reclassToColumn",
-                      action="store",dest="reclassToColumn",
+                      action="store", dest="reclassToColumn",
                       help="Header of reclass table column containing codes," +
-                      " default is to use first column (default is to use second column of classTable)")
+                      " default is to use first column (default is to use " +
+                      "second column of classTable)")
 
     parser.add_option("--resample",
                       action="store", dest="cellFactor",
-                      help="Resample grid by dividing cellsize with an" +
-                      " integer factor. Factor <1 results in refinement." +
+                      help="Resample grid by dividing cellsize with a" +
+                      " factor. Factor <1 results in refinement." +
                       " Reprojection uses temporary refinement")
 
     parser.add_option("--resamplingMethod",
                       action="store", dest="resamplingMethod",
-                      help="Choose between 'mean', 'sum' or" +
-                      " 'majority', default is %default",
-                      default="mean")
+                      help="For cellFactor > 1: " +
+                      "Choose between 'mean', 'sum', 'majority' or" +
+                      " 'count', default is sum,"
+                      "For cellFactor < 1, choose between: " +
+                      "'keepTotal' and 'keepValue', default is 'keepTotal'")
 
     parser.add_option("--summarize",
                       action="store_true", dest="summarize",
@@ -400,7 +412,7 @@ def main():
     if options.infileName is not None:
         inFilePath = path.abspath(options.infileName)
         if not path.exists(inFilePath):
-            log.error("Input raster does not exist")
+            log.error("Input raster %s does not exist" % options.infileName)
             sys.exit(1)
     else:
         parser.error("No input data specified")
@@ -462,16 +474,50 @@ def main():
             classDict[row[classTable.colIndex[reclassFromColumn]]
                       ] = row[classTable.colIndex[reclassToColumn]]
 
-    if options.resamplingMethod not in ('sum', 'mean', 'majority'):
-        log.error(
-            "Invalid resampling method, valid options are 'sum' " +
-            "and 'mean' and 'majority'")
+    if options.cellFactor is not None:
+        cellFactor = float(options.cellFactor)
+        if cellFactor > 1 and \
+                options.resamplingMethod not in ('sum',
+                                                 'mean',
+                                                 'majority',
+                                                 'count',
+                                                 None):
 
-    if options.resamplingMethod == 'majority' and options.toProj is not None:
-        log.error(
-            "Resampling method 'majority' not possible to " +
-            "combine with reprojection")
-        sys.exit(1)
+                log.error(
+                  "Invalid resampling method, valid options for grid " +
+                  "coarsening are 'sum' " +
+                  "and 'mean' and 'majority', " +
+                  "specified %s" % options.resamplingMethod)
+                sys.exit(1)
+
+        elif cellFactor < 1 and \
+                options.resamplingMethod not in ('keepTotal',
+                                                 'keepValue',
+                                                 None):
+                log.error(
+                    "Invalid resampling method, valid options for grid " +
+                    "coarsening are 'keepTotal' and 'keepValue'" +
+                    ", specified %s" % resamplingMethod)
+                sys.exit(1)
+
+        # setting default resampling methods
+        if cellFactor > 1 and \
+                options.resamplingMethod is None:
+            resamplingMethod = 'sum'
+
+        elif options.resamplingMethod is None:
+            resamplingMethod = 'keepTotal'
+        else:
+            resamplingMethod = options.resamplingMethod
+
+        if options.resamplingMethod == 'majority' or \
+                options.resamplingMethod == 'count' and \
+                options.toProj is not None:
+            log.error(
+                "Resampling method " +
+                "%s not possible to " % options.resamplingMethod +
+                "combine with reprojection")
+            sys.exit(1)
 
     #Assure that gdal is present
     if not __gdal_loaded__:
@@ -571,7 +617,7 @@ def main():
 
     #process option for resampling
     if options.cellFactor is not None:
-        cellFactor = float(options.cellFactor)
+        cellFactor = float(cellFactor)
     else:
         cellFactor = 1
 
@@ -747,7 +793,7 @@ def main():
             try:
                 data = resampleBlock(data[:, :],
                                      cellFactor,
-                                     options.resamplingMethod,
+                                     resamplingMethod,
                                      nodata)
 
             except ValueError as err:
@@ -795,7 +841,7 @@ def main():
         shapeFile.Destroy()
 
     if not options.toShape and options.toProj is not None:
-        if options.resamplingMethod == "mean":
+        if options.resamplingMethod is not None and resamplingMethod == "mean":
             outArray = np.where(nvals > 0, outArray / nvals, outArray)
 
         outBand.WriteArray(outArray, 0, 0)

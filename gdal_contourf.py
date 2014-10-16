@@ -87,7 +87,7 @@ def main():
 
     parser.add_option(
         '--interval',
-        action='store_true',
+        action='store',
         dest='interval',
         help='Interval between isolones'
     )
@@ -120,16 +120,32 @@ def main():
         help="Highest level to be created, default is raster maximum"
     )
 
+    parser.add_option(
+        '-i',
+        '--input',
+        action='store',
+        dest='raster',
+        help='Input raster'
+    )
+
     (options, args) = parser.parse_args()
     if options.verbose:
         loglevel = logging.DEBUG
     else:
-        loglevel = logging.INFO,
+        loglevel = logging.INFO
     logging.basicConfig(level=loglevel)
     log = logging.getLogger(__name__)
 
-    if len(args) != 1:
-        log.error("Missing argument for input raster")
+    if not __matplotlib_loaded__:
+        log.error("Must have matplotlib installed")
+        sys.exit(1)
+
+    if len(args) != 0:
+        log.error("No argument expected")
+        sys.exit(1)
+
+    if options.raster is None:
+        log.error("Must specify input raster")
         sys.exit(1)
 
     if options.isolines is None and options.isobands is None:
@@ -137,12 +153,12 @@ def main():
                   " '--isolines <filename>' or '--isobands <filename>'")
         sys.exit(1)
 
-    if not os.path.exists(args[0]):
+    if not os.path.exists(options.raster):
         log.error("Input raster does not exist")
         sys.exit(1)
 
     #read input raster
-    ds = gdal.Open(args[0])
+    ds = gdal.Open(options.raster)
     rast = ds.ReadAsArray()
     gt = ds.GetGeoTransform()
     ds = None
@@ -181,8 +197,6 @@ def main():
     if options.levels is not None:
         levels = map(float, options.levels.split())
     elif options.logarithmic:
-        import pdb
-        pdb.set_trace()
         levels = numpy.logspace(numpy.log10(min_val),
                                 numpy.log10(max_val), nlevels)
     else:
@@ -215,10 +229,11 @@ def main():
     #resample grid using splines of specified order
     x_interp = numpy.linspace(x[0], x[-1], int(nx * resampling_factor))
     y_interp = numpy.linspace(y[-1], y[0], int(ny * resampling_factor))
+
     kernel = interpolate.RectBivariateSpline(
-        x, y[::-1], numpy.flipud(rast),
+        y[::-1], x, numpy.flipud(rast),
         kx=spline_degree, ky=spline_degree)
-    rast_interp = kernel(x_interp, y_interp)
+    rast_interp = kernel(y_interp, x_interp)
 
     #Mesh to be used for contouring
     x_interp, y_interp = numpy.meshgrid(x_interp, y_interp)
