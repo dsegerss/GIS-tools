@@ -11,7 +11,7 @@ Description
 Convert raster into STL-format
 """
 
-#Standard modules
+# Standard modules
 from os import path
 import sys
 from optparse import OptionParser
@@ -19,8 +19,8 @@ import logging
 
 import numpy as np
 
-#pyAirviro-modules
-from  pyAirviro.other.utilities import ProgressBar
+# pyAirviro-modules
+from pyAirviro.other.utilities import ProgressBar
 
 try:
     from osgeo import ogr
@@ -30,7 +30,7 @@ try:
 except:
     __gdal_loaded__ = False
 
-#Docstrings for the option parser
+# Docstrings for the option parser
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
 
@@ -66,7 +66,7 @@ class Point:
         return self.coords[0]
 
     def round(self, precision):
-        #rounds to specified number of decimals
+        # rounds to specified number of decimals
         for i in range(len(self.coords)):
             self.coords[i] = round(self.coords[i], precision)
 
@@ -101,10 +101,10 @@ class Triangle:
         self.points = [p1, p2, p3]
 
     def normal(self):
-        #vectors that defines the plane
+        # vectors that defines the plane
         a = self.p2() - self.p1()
         b = self.p3() - self.p1()
-        #cross product p1*p2
+        # cross product p1*p2
         x = a[1] * b[2] - a[2] * b[1]
         y = a[2] * b[0] - a[0] * b[2]
         z = a[0] * b[1] - a[1] * b[0]
@@ -190,16 +190,16 @@ def block2STL(block, stream, xll, yll, cellsizeX, cellsizeY,
             t2 = Triangle(p, p_upper_right, p_right)
 
             t1.round(precision)
-            if (z_c != nodata and z_c_upper != nodata
-                and z_c_upper_right != nodata):
+            if z_c != nodata and z_c_upper != nodata \
+               and z_c_upper_right != nodata:
                 stream.writelines(str(t1))
-            if (z_c != nodata and z_c_upper_right != nodata
-                and z_c_right != nodata):
+            if z_c != nodata and z_c_upper_right != nodata \
+               and z_c_right != nodata:
                 stream.writelines(str(t2))
 
 
 def main():
-    #-----------Setting up and unsing option parser-----------------------
+    # -----------Setting up and unsing option parser----------------
     parser = OptionParser(usage=usage, version=version)
 
     parser.add_option("-d", "--doc",
@@ -245,10 +245,10 @@ def main():
     (options, args) = parser.parse_args()
 
     # configuring logging
-    FORMAT = '%(levelname) %(message)s'
+    FORMAT = '%(levelname)s %(message)s'
     logging.basicConfig(format=FORMAT)
 
-    #------------Process and validate options---------------
+    # ------------Process and validate options---------------
     if options.doc:
         print __doc__
         sys.exit()
@@ -256,7 +256,7 @@ def main():
     if len(args) > 0:
         parser.error("Incorrect number of arguments")
 
-    #validate infile path
+    # validate infile path
     if options.infileName is not None:
         inFilePath = options.infileName
         if not path.exists(inFilePath):
@@ -266,7 +266,7 @@ def main():
         log.error("No input file specified")
         sys.exit(1)
 
-    #validate outfile path
+    # validate outfile path
     if options.output is None:
         log.error("No output file specified")
         sys.exit(1)
@@ -274,7 +274,7 @@ def main():
     if options.buffer is not None:
         bufferDist = float(options.buffer)
 
-    #Assure that gdal is present
+    # Assure that gdal is present
     if not __gdal_loaded__:
         raise OSError("Function readGDAL needs GDAL with python bindings")
 
@@ -287,9 +287,9 @@ def main():
 
     ncols = ds.RasterXSize
     nrows = ds.RasterYSize
-    #nbands = ds.RasterCount
+    # nbands = ds.RasterCount
 
-    #Info used for georeferencing
+    # Info used for georeferencing
     geoTransform = ds.GetGeoTransform()
     xul = geoTransform[0]  # top left x
     cellsizeX = geoTransform[1]  # w-e pixel resolution
@@ -297,13 +297,13 @@ def main():
     yul = geoTransform[3]  # top left y
     rot2 = geoTransform[4]  # rotation, 0 if image is "north up"
     cellsizeY = geoTransform[5]  # n-s pixel resolution
-    #proj = ds.GetProjection()
+    # proj = ds.GetProjection()
 
-    #Calculate lower left corner
+    # Calculate lower left corner
     xll = xul
     yll = yul + nrows * cellsizeY  # cellsizeY should be a negative value
 
-    #Rotated rasters not handled...yet
+    # Rotated rasters not handled...yet
     if rot1 != 0 or rot2 != 0:
         log.error('Handling of rotated rasters are not implemented yet')
         sys.exit(1)
@@ -312,12 +312,12 @@ def main():
     band = ds.GetRasterBand(bandIndex)
 
     nodata = band.GetNoDataValue()
-    #If no nodata value is present in raster, set to -9999 for completeness
+    # If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
         nodata = -9999
 
-    #Processing of data is made for blocks of the following size
-    #two rows are processed at a time since triangles
+    # Processing of data is made for blocks of the following size
+    # two rows are processed at a time since triangles
     # are created between cell centres.
     procXBlockSize = ncols
     procYBlockSize = 2
@@ -327,9 +327,9 @@ def main():
 
         stlFile.write("solid " + options.solidName + "\n")
 
-        avgHeight = 0
-        #write original cells to STL
-        #Loop over blocks of raster
+#        avgHeight = 0
+        # write original cells to STL
+        # Loop over blocks of raster
 
         for i in range(0, nrows - 1, 1):
             pg.update(i)
@@ -349,19 +349,47 @@ def main():
             block2STL(data, stlFile, blockXll, blockYll, cellsizeX,
                       cellsizeY, nodata, int(options.precision))
 
-            avgHeight += np.mean(data)
+#            avgHeight += np.mean(data)
 
-        avgHeight /= (nrows - 1)
+#        avgHeight /= (nrows - 1)
+
+        # write buffer cells to STL
+        leftBoundary = band.ReadAsArray(
+            xoff=0, yoff=0,
+            win_xsize=1,
+            win_ysize=nrows
+        )
+
+        rightBoundary = band.ReadAsArray(
+            xoff=ncols - 1, yoff=0,
+            win_xsize=1,
+            win_ysize=nrows
+        )
+
+        topBoundary = band.ReadAsArray(
+            xoff=0, yoff=0,
+            win_xsize=procXBlockSize,
+            win_ysize=1
+        )
+
+        bottomBoundary = band.ReadAsArray(
+            xoff=0, yoff=nrows - 1,
+            win_xsize=procXBlockSize,
+            win_ysize=1
+        )
+
+        avgHeight = 0.25 * (
+            leftBoundary.mean() +
+            rightBoundary.mean() +
+            topBoundary.mean() +
+            bottomBoundary.mean()
+        )
 
         if options.buffer is not None:
             # overlap of one cell since triangles are created between
             # cell centres
             bufferCells = int(bufferDist / cellsizeX) + 1
 
-            #write buffer cells to STL
-            leftBoundary = band.ReadAsArray(xoff=0, yoff=0,
-                                         win_xsize=1,
-                                         win_ysize=nrows)
             leftBuffer = leftBoundary[:]
 
             for i in range(1, bufferCells):
@@ -374,11 +402,6 @@ def main():
                       yll, cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            rightBoundary = band.ReadAsArray(xoff=ncols - 1, yoff=0,
-                                         win_xsize=1,
-                                         win_ysize=nrows)
-
-
             rightBuffer = rightBoundary[:]
             for i in range(1, bufferCells):
                 dist = i * cellsizeX
@@ -390,40 +413,36 @@ def main():
                       yll, cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            topBoundary = band.ReadAsArray(xoff=0, yoff=0,
-                                         win_xsize=procXBlockSize,
-                                         win_ysize=1)
             topBuffer = topBoundary[:]
             for i in range(1, bufferCells):
                 dist = abs(i * cellsizeY)
                 topBuffer = np.vstack((
-                        damp(topBoundary, avgHeight, dist, bufferDist),
-                        topBuffer))
+                    damp(topBoundary, avgHeight, dist, bufferDist),
+                    topBuffer)
+                )
 
             block2STL(topBuffer, stlFile, xll,
                       yul + cellsizeY,
                       cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            bottomBoundary = band.ReadAsArray(xoff=0, yoff=nrows - 1,
-                                         win_xsize=procXBlockSize,
-                                         win_ysize=1)
             bottomBuffer = bottomBoundary[:]
             for i in range(1, bufferCells):
                 dist = abs(i * cellsizeY)
                 bottomBuffer = np.vstack((
-                        bottomBuffer,
-                        damp(bottomBoundary, avgHeight, dist, bufferDist)))
+                    bottomBuffer,
+                    damp(bottomBoundary, avgHeight, dist, bufferDist))
+                )
 
             block2STL(bottomBuffer, stlFile, xll,
                       yll + (bufferCells - 1) * cellsizeY, cellsizeX,
                       cellsizeY, nodata,
                       int(options.precision))
 
-            #Add corner buffers
+            # Add corner buffers
             cornerBlock = np.ones((bufferCells, bufferCells))
 
-            #upper right
+            # upper right
             blockXll = xll + (ncols - 1) * cellsizeX
             blockYll = yul + cellsizeY
             startHeight = rightBoundary[0, 0]
@@ -439,7 +458,7 @@ def main():
                     dist = (np.sqrt(pow(centre[0] - cornerPoint[0], 2) +
                                     pow(centre[1] - cornerPoint[1], 2)))
 
-                    #dist = min(row, col) * cellsizeX
+                    # dist = min(row, col) * cellsizeX
                     cornerBlock[row, col] = damp(startHeight, avgHeight,
                                                  dist, bufferDist)
 
@@ -450,7 +469,7 @@ def main():
                       blockYll, cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            #lower left
+            # lower left
             blockXll = xll - (bufferCells - 1) * cellsizeX
             blockYll = yll + (bufferCells - 1) * cellsizeY
             startHeight = leftBoundary[-1, 0]
@@ -473,7 +492,7 @@ def main():
                       blockYll, cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            #upper left
+            # upper left
             blockXll = xll - (bufferCells - 1) * cellsizeX
             blockYll = yul + cellsizeY
             startHeight = leftBoundary[0, 0]
@@ -496,7 +515,7 @@ def main():
                       blockYll, cellsizeX, cellsizeY, nodata,
                       int(options.precision))
 
-            #lower right
+            # lower right
             blockXll = xll + (ncols - 1) * cellsizeX
             blockYll = yll + (bufferCells - 1) * cellsizeY
             startHeight = rightBoundary[-1, 0]
@@ -526,9 +545,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # try:
-    #     main()
-    # except:
-    #     import pdb, sys
-    #     e, m, tb = sys.exc_info()
-    #     pdb.post_mortem(tb)

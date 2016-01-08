@@ -19,6 +19,7 @@ import logging
 from optparse import OptionParser
 
 try:
+    from osgeo import osr
     from osgeo import ogr
     from osgeo import gdal
     __gdal_loaded__ = True
@@ -33,9 +34,69 @@ try:
 except ImportError:
     __matplotlib_loaded__ = False
 
-#Docstrings for the option parser
+# Docstrings for the option parser
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
+
+
+def write_isolines(layer, isolines):
+    layer.CreateField(ogr.FieldDefn(str('value'), ogr.OFTReal))
+    lineFeatureDefn = layer.GetLayerDefn()
+
+    for lev, isoline in enumerate(isolines.collections):
+        value = isolines.levels[lev]
+        lines = isoline.get_paths()
+        for line in lines:
+            linestring = ogr.Geometry(ogr.wkbLineString)
+            for seg in line.vertices:
+                x = seg[0]
+                y = seg[1]
+                linestring.AddPoint(x, y)
+            feature = ogr.Feature(lineFeatureDefn)
+            feature.SetGeometry(linestring)
+            feature.SetField(str('value'), float(value))
+            layer.CreateFeature(feature)
+            linestring.Destroy()
+            feature.Destroy()
+
+
+def write_isobands(layer, isobands):
+    layer.CreateField(ogr.FieldDefn(str('min'), ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn(str('max'), ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn(str('interval'), ogr.OFTString))
+    bandFeatureDefn = layer.GetLayerDefn()
+
+    for lev, isoband in enumerate(isobands.collections):
+        min_level = isobands.levels[lev]
+        max_level = isobands.levels[lev + 1]
+        paths = isoband.get_paths()
+        for path in paths:
+            polygon = ogr.Geometry(ogr.wkbPolygon)
+            polys = path.to_polygons()
+            ring = ogr.Geometry(ogr.wkbLinearRing)
+            for seg in polys[0]:
+                x = seg[0]
+                y = seg[1]
+                ring.AddPoint(x, y)
+            ring.CloseRings()
+            polygon.AddGeometry(ring)
+            for poly in polys[1:]:
+                ring = ogr.Geometry(ogr.wkbLinearRing)
+                for row in range(len(poly) - 1, 0, -1):
+                    x = poly[row][0]
+                    y = poly[row][1]
+                    ring.AddPoint(x, y)
+                ring.CloseRings()
+                polygon.AddGeometry(ring)
+            feature = ogr.Feature(bandFeatureDefn)
+            feature.SetGeometry(polygon)
+            feature.SetField(str('min'), float(min_level))
+            feature.SetField(str('max'), float(max_level))
+            feature.SetField(str('interval'),
+                             str("%f-%f" % (min_level, max_level)))
+            layer.CreateFeature(feature)
+            polygon.Destroy()
+            feature.Destroy()
 
 
 def main():
@@ -121,6 +182,13 @@ def main():
     )
 
     parser.add_option(
+        '--precision',
+        action='store',
+        dest='precision',
+        help="Number of decimals for breaks"
+    )
+
+    parser.add_option(
         '-i',
         '--input',
         action='store',
@@ -157,10 +225,13 @@ def main():
         log.error("Input raster does not exist")
         sys.exit(1)
 
-    #read input raster
+    # read input raster
     ds = gdal.Open(options.raster)
     rast = ds.ReadAsArray()
     gt = ds.GetGeoTransform()
+    proj = ds.GetProjection()
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(proj)
     ds = None
     dx = gt[1]
     dy = gt[5]
@@ -202,6 +273,15 @@ def main():
     else:
         levels = numpy.linspace(min_val, max_val, nlevels)
 
+    if levels[-1] < rast.max():
+        levels = numpy.append(levels, rast.max())
+
+    if levels[0] > rast.min():
+        levels = numpy.insert(levels, 0, rast.min())
+
+    if options.precision is not None:
+        levels = numpy.around(levels, int(options.precision))
+        levels = numpy.unique(levels)
     #prepare output files
     driver = ogr.GetDriverByName(str(options.format))
     if options.isolines is not None:
@@ -210,7 +290,7 @@ def main():
         isolinefile = driver.CreateDataSource(str(options.isolines))
         if isolinefile is None:
             raise OSError("Could not open data source: " + options.isolines)
-        isoline_layer = isolinefile.CreateLayer(str('isolines'),
+        isoline_layer = isolinefile.CreateLayer(str('isolines'), srs=srs,
                                                 geom_type=ogr.wkbLineString)
 
     if options.isobands is not None:
@@ -219,7 +299,7 @@ def main():
         isobandfile = driver.CreateDataSource(str(options.isobands))
         if isobandfile is None:
             raise OSError("Could not open data source: " + options.isobands)
-        isoband_layer = isobandfile.CreateLayer(str('isobands'),
+        isoband_layer = isobandfile.CreateLayer(str('isobands'), srs=srs,
                                                 geom_type=ogr.wkbPolygon)
 
     #create input raster coordinate vectors
@@ -255,66 +335,6 @@ def main():
     #ax.add_patch(patch)
     #ax.colorbar()
     #plt.show()
-
-
-def write_isobands(layer, isobands):
-    layer.CreateField(ogr.FieldDefn(str('min'), ogr.OFTReal))
-    layer.CreateField(ogr.FieldDefn(str('max'), ogr.OFTReal))
-    layer.CreateField(ogr.FieldDefn(str('interval'), ogr.OFTString))
-    bandFeatureDefn = layer.GetLayerDefn()
-
-    for lev, isoband in enumerate(isobands.collections):
-        min_level = isobands.levels[lev]
-        max_level = isobands.levels[lev + 1]
-        paths = isoband.get_paths()
-        for path in paths:
-            polygon = ogr.Geometry(ogr.wkbPolygon)
-            polys = path.to_polygons()
-            ring = ogr.Geometry(ogr.wkbLinearRing)
-            for seg in polys[0]:
-                x = seg[0]
-                y = seg[1]
-                ring.AddPoint(x, y)
-            ring.CloseRings()
-            polygon.AddGeometry(ring)
-            for poly in polys[1:]:
-                ring = ogr.Geometry(ogr.wkbLinearRing)
-                for row in range(len(poly) - 1, 0, -1):
-                    x = poly[row][0]
-                    y = poly[row][1]
-                    ring.AddPoint(x, y)
-                ring.CloseRings()
-                polygon.AddGeometry(ring)
-            feature = ogr.Feature(bandFeatureDefn)
-            feature.SetGeometry(polygon)
-            feature.SetField(str('min'), min_level)
-            feature.SetField(str('max'), max_level)
-            feature.SetField(str('interval'),
-                             str("%f-%f" % (min_level, max_level)))
-            layer.CreateFeature(feature)
-            polygon.Destroy()
-            feature.Destroy()
-
-
-def write_isolines(layer, isolines):
-    layer.CreateField(ogr.FieldDefn(str('value'), ogr.OFTReal))
-    lineFeatureDefn = layer.GetLayerDefn()
-
-    for lev, isoline in enumerate(isolines.collections):
-        value = isolines.levels[lev]
-        lines = isoline.get_paths()
-        for line in lines:
-            linestring = ogr.Geometry(ogr.wkbLineString)
-            for seg in line.vertices:
-                x = seg[0]
-                y = seg[1]
-                linestring.AddPoint(x, y)
-            feature = ogr.Feature(lineFeatureDefn)
-            feature.SetGeometry(linestring)
-            feature.SetField(str('value'), value)
-            layer.CreateFeature(feature)
-            linestring.Destroy()
-            feature.Destroy()
 
 if __name__ == "__main__":
     main()

@@ -38,6 +38,7 @@ DEFAULT_RASTER_FORMAT = "GTiff"
 DENSITY_AIR = 1.22  # kg/m3
 UNIT_CONVERSION_FACTOR = 1.0e6 * DENSITY_AIR
 
+
 def main():
     #-----------Setting up and unsing option parser-----------------------
     parser = OptionParser(usage=usage, version=version)
@@ -144,10 +145,10 @@ def main():
     srs.ImportFromProj4(grib_field['proj4'])
     mem_ds.SetProjection(srs.ExportToWkt())
     outGeotransform = [
-        800000,
+        1035000,
         grib_field.dlon,
         0,
-        6900000,
+        6816500,
         0,
         -1 * grib_field.dlat
     ]
