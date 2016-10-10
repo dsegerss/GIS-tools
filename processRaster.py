@@ -17,7 +17,7 @@ the original resolution)
 - Convert into Shape-format (fishnet), a filter can be given to produce a
 smaller 'sparse' raster
 """
-#Standard modules
+# Standard modules
 from os import path
 import sys
 import re
@@ -26,7 +26,7 @@ from optparse import OptionParser
 
 import numpy as np
 
-#pyAirviro-modules
+# pyAirviro-modules
 from pyAirviro.other import datatable
 from  pyAirviro.other.utilities import ProgressBar
 from pyAirviro.other.logging import get_loglevel
@@ -40,7 +40,7 @@ try:
 except:
     __gdal_loaded__ = False
 
-#Docstrings for the option parser
+# Docstrings for the option parser
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
 
@@ -51,7 +51,7 @@ if __gdal_loaded__:
                     "Integer": ogr.OFTInteger}
 
 
-#-----------Global variables -----------
+# -----------Global variables -----------
 log = None
 # --------------------------------------
 
@@ -260,18 +260,20 @@ def resampleBlock(block, cellFactor, method, nodata):
     return newBlock
 
 
-def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
+def reprojectBlock(
+        outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
     for inRow in range(blockDef["nrows"]):
         for inCol in range(blockDef["ncols"]):
             val = block[inRow, inCol]
-            #cell centre in source SRS
+            # cell centre in source SRS
             x_in = blockDef["xll"] + (inCol + 0.5) * blockDef["cellsize"]
             y_in = blockDef["yul"] - (inRow + 0.5) * blockDef["cellsize"]
 
-            #cell centre in target SRS
+            import pdb;pdb.set_trace()
+            # cell centre in target SRS
             x_out, y_out, z_out = coordTrans.TransformPoint(x_in, y_in)
 
-            #check if outside target extent
+            # check if outside target extent
             if((x_out < outDef["xll"] or y_out < outDef["yll"]) or
                (x_out > outDef["xur"] or y_out > outDef["yul"])):
                 continue
@@ -288,7 +290,7 @@ def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans, nv
 
 
 def main():
-    #-----------Setting up and unsing option parser-----------------------
+    # -----------Setting up and unsing option parser-----------------------
     parser = OptionParser(usage=usage, version=version)
 
     parser.add_option("-d", "--doc",
@@ -436,7 +438,7 @@ def main():
         parser.error("fieldName option only allowed together" +
                      " with shape output")
 
-    #Validate filter option and convert filter to numeric value if present
+    # Validate filter option and convert filter to numeric value if present
     if not options.toShape and options.filter is not None:
         parser.error("Filter option only allowed together with shape output")
     elif options.toShape:
@@ -445,7 +447,7 @@ def main():
         else:
             filter = None
 
-    #read and process reclass table file
+    # read and process reclass table file
     if options.classTable is not None:
         reclassFromColumn = options.reclassFromColumn
         reclassToColumn = options.reclassToColumn
@@ -484,10 +486,11 @@ def main():
                                                  None):
 
                 log.error(
-                  "Invalid resampling method, valid options for grid " +
-                  "coarsening are 'sum' " +
-                  "and 'mean' and 'majority', " +
-                  "specified %s" % options.resamplingMethod)
+                    "Invalid resampling method, valid options for grid " +
+                    "coarsening are 'sum' " +
+                    "and 'mean' and 'majority', " +
+                    "specified %s" % options.resamplingMethod
+                )
                 sys.exit(1)
 
         elif cellFactor < 1 and \
@@ -519,7 +522,7 @@ def main():
                 "combine with reprojection")
             sys.exit(1)
 
-    #Assure that gdal is present
+    # Assure that gdal is present
     if not __gdal_loaded__:
         raise OSError("Function readGDAL needs GDAL with python bindings")
 
@@ -534,7 +537,7 @@ def main():
     nrows = ds.RasterYSize
     nbands = ds.RasterCount
 
-    #Info used for georeferencing
+    # Info used for georeferencing
     geoTransform = ds.GetGeoTransform()
     xul = geoTransform[0]  # top left x
     cellsizeX = geoTransform[1]  # w-e pixel resolution
@@ -542,13 +545,13 @@ def main():
     yul = geoTransform[3]  # top left y
     rot2 = geoTransform[4]  # rotation, 0 if image is "north up"
     cellsizeY = geoTransform[5]  # n-s pixel resolution
-    proj = ds.GetProjection()
+    proj = osr.SpatialReference(ds.GetProjection())
 
-    #Calculate lower left corner
+    # Calculate lower left corner
     xll = xul
     yll = yul + nrows * cellsizeY  # cellsizeY should be a negative value
 
-    #Rotated rasters not handled...yet
+    # Rotated rasters not handled...yet
     if rot1 != 0 or rot2 != 0:
         print 'Rotated rasters are not supported by pyAirviro.geo.raster'
         sys.exit(1)
@@ -563,10 +566,10 @@ def main():
     band = ds.GetRasterBand(bandIndex)
     nodata = band.GetNoDataValue()
 
-    #If no nodata value is present in raster, set to -9999 for completeness
+    # If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
         nodata = -9999
-    #Read data from a window defined by option --bbox <"x1,y1,x2,y2">
+    # Read data from a window defined by option --bbox <"x1,y1,x2,y2">
     if options.bbox is not None:
         xur = xll + ncols * cellsizeX
         try:
@@ -575,12 +578,12 @@ def main():
             log.error("Invalid value for option --bbox <\"x1,y1,x2,y2\">")
             sys.exit(1)
 
-        #Check if totally outside raster extent
+        # Check if totally outside raster extent
         if x2 < xll or y2 < yll  or x1 > xur or y1 > yul:
             log.error("Trying to extract outside grid boundaries")
             sys.exit(1)
 
-        #Limit bbox to raster extent
+        # Limit bbox to raster extent
         if x1 < xll:
             x1 = xll
         if x2 > xur:
@@ -590,7 +593,7 @@ def main():
         if y2 > yul:
             y2 = yul
 
-        #estimate min and max of rows and cols
+        # estimate min and max of rows and cols
         colmin = int((x1 - xll) / cellsizeX)
         colmaxdec = (x2 - xll) / float(cellsizeX)
         rowmin = int((yul - y2) / abs(cellsizeY))
@@ -615,7 +618,7 @@ def main():
         rowmin = 0
         colmin = 0
 
-    #process option for resampling
+    # process option for resampling
     if options.cellFactor is not None:
         cellFactor = float(cellFactor)
     else:
@@ -628,7 +631,7 @@ def main():
         procYBlockSize = 1
 
     if options.toProj is None:
-        #Set output raster dimensions and cellsize
+        # Set output raster dimensions and cellsize
         newNcols = int(ncols / cellFactor)
         newNrows = int(nrows / cellFactor)
         newCellsizeX = cellsizeX * cellFactor
@@ -639,7 +642,7 @@ def main():
         newNodata = nodata
 
     else:
-        #Create coordinate transform
+        # Create coordinate transform
         if options.fromProj is None:
             src_srs = proj
         else:
@@ -647,10 +650,11 @@ def main():
             src_srs.ImportFromProj4(options.fromProj)
         tgt_srs = osr.SpatialReference()
         tgt_srs.ImportFromProj4(options.toProj)
+        import pdb;pdb.set_trace()
         coordTrans = osr.CoordinateTransformation(src_srs, tgt_srs)
 
         if options.template is None:
-            #estimate extent from input
+            # estimate extent from input
             newNcols = ncols
             newNrows = nrows
             newCellsizeX = cellsizeX
@@ -669,20 +673,30 @@ def main():
             newCellsizeX = float(
                 re.compile("cellsize\s*([0-9]*)").search(header).group(1))
             newCellsizeY = -1 * newCellsizeX
-            newNodata = float(
-                re.compile("NODATA_value\s*(.*?)\n").search(header).group(1))
+            try:
+                newNodata = float(
+                    re.compile(
+                        "NODATA_value\s*(.*?)\n"
+                    ).search(header).group(1)
+                )
+            except AttributeError:
+                newNodata = float(
+                    re.compile(
+                        "nodata_value\s*(.*?)\n"
+                    ).search(header).group(1)
+                )
             newXll = float(
                 re.compile("xllcorner\s*(.*?)\n").search(header).group(1))
             newYll = float(
                 re.compile("yllcorner\s*(.*?)\n").search(header).group(1))
             newYul = newYll - newNrows * newCellsizeY
 
-    #Processing of data is made for blocks of the following size
-    #Important - blocks are set to cover all columns for simpler processing
-    #This might not always be optimal for read/write speed
+    # Processing of data is made for blocks of the following size
+    # Important - blocks are set to cover all columns for simpler processing
+    # This might not always be optimal for read/write speed
     procXBlockSize = ncols
 
-    #process option for dataType
+    # process option for dataType
     if options.toShape:
         dataTypes, defaultDataType = ogrDataTypes, 'Real'
     else:
@@ -694,9 +708,9 @@ def main():
             "Unknown datatype choose between: %s" % ",".join(dataTypes.keys()))
         sys.exit(1)
 
-    #Create and configure output raster data source
+    # Create and configure output raster data source
     if not options.toShape and outFilePath is not None:
-        #Creates a raster dataset with 1 band
+        # Creates a raster dataset with 1 band
 
         mem_ds = gdal.GetDriverByName('MEM').Create(outFilePath,
                                                     newNcols,
@@ -729,7 +743,7 @@ def main():
                   "cellsize": newCellsizeX
                   }
 
-    #Create and inititialize output vector data source
+    # Create and inititialize output vector data source
     if options.toShape:
         shapeDriver = ogr.GetDriverByName('ESRI Shapefile')
         if path.exists(outFilePath):
@@ -742,7 +756,7 @@ def main():
         fieldDefn = ogr.FieldDefn(fieldName, dataType)
         layer.CreateField(fieldDefn)
 
-    #inititialize input grid summary
+    # inititialize input grid summary
     inputGridSummary = {"sum": 0,
                         "mean": 0,
                         "nnodata": 0,
@@ -767,7 +781,7 @@ def main():
                          "cellsizeY": newCellsizeY,
                          "nodatavalue": newNodata}
 
-    #Loop over block of raster (at least one row in each block)
+    # Loop over block of raster (at least one row in each block)
     rowsOffset = 0
     errDict = {}
     pg = ProgressBar(nrows, options.progressStream)
