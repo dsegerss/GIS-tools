@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: us-ascii -*-
 """
-Name: grib2gdal.py
+Convert MATCH grib fields to GDAL format of choice.
+
 Created: 09 Oct 2014
 Author: David Segersson
-
-Description
-Convert MATCH grib fields to GDAL format of choice.
 """
 
 import sys
 import logging
-from optparse import OptionParser
+import argparse
 
 import numpy as np
 
@@ -29,34 +27,24 @@ try:
 except ImportError:
     __pygrib_loaded__ = False
 
-
-#Docstrings for the option parser
-usage = "usage: %prog [options] "
-version = "%prog 1.0"
-
 DEFAULT_RASTER_FORMAT = "GTiff"
 DENSITY_AIR = 1.22  # kg/m3
 UNIT_CONVERSION_FACTOR = 1.0e6 * DENSITY_AIR
 
+log = logging.getLogger(__name__)
+
 
 def main():
-    #-----------Setting up and unsing option parser-----------------------
-    parser = OptionParser(usage=usage, version=version)
+    parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_option(
-        '-v', '--verbose',
-        action='store_true', dest='verbose',
-        help='produce verbose output'
-    )
-
-    parser.add_option(
+    parser.add_argument(
         '-p', '--param',
         action='store',
         dest='param',
         help='param to extract'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '-l', '--level',
         action='store',
         dest='level',
@@ -64,78 +52,93 @@ def main():
         help='Level to extract'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '-s', '--sort',
         action='store',
         dest='sort',
         help='Sort to extract'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '-t', '--timeinterp',
         action='store',
         dest='timeinterp',
         help='Timeinterp to extract'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '-i',
         action='store',
         dest='infile',
         help='Input grib file'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '-o',
         action='store',
         dest='outfile',
         help='Output gdal file'
     )
 
-    parser.add_option(
+    parser.add_argument(
         '--format',
         action='store',
         dest='format',
         help='Output format, default is %s' % DEFAULT_RASTER_FORMAT,
-        default = DEFAULT_RASTER_FORMAT
+        default=DEFAULT_RASTER_FORMAT
     )
 
-    (options, args) = parser.parse_args()
-    if options.verbose:
-        loglevel = logging.DEBUG
-    else:
-        loglevel = logging.WARNING,
+    parser.add_argument(
+        '--unit-conversion',
+        action='store',
+        type=float,
+        dest='unit_conversion_factor',
+        help='Factor for unit conversion',
+        default=1.0
+    )
 
-    logging.basicConfig(level=loglevel)
-    log = logging.getLogger(__name__)
+    parser.add_argument(
+        '-v',
+        action=VerboseAction, dest='loglevel', default=logging.WARNING,
+        help='increase verbosity in terminal'
+    )
+    
+    args = parser.parse_args()
 
-    #Assure that gdal is present
+    # Assure that gdal is present
     if not __gdal_loaded__:
         log.error("Function readGDAL needs GDAL with python bindings")
         sys.exit(1)
 
-    grib = pg.open(options.infile)
-    if not grib.has_par(options.param, lev=options.level):
+    grib = pg.open(args.infile)
+
+    if not grib.has_par(args.param, lev=args.level):
         log.error(
             "Parameter %s and level %i not found in grib: %s" % (
-                par, lev, options.infile)
+                args.param, args.level, args.infile)
         )
         sys.exit(1)
 
     grib_field = grib.get(
-        options.param,
-        lev=options.level,
-        sort=options.sort,
-        time=options.timeinterp
+        args.param,
+        lev=args.level,
+        sort=args.sort,
+        time=args.timeinterp
     )
 
     gdal_field = np.flipud(
-        grib_field.values.transpose()) * UNIT_CONVERSION_FACTOR
+        grib_field.values.transpose()
+    )
+
+    gdal_field *= args.unit_conversion_factor
+
+    # to convert to microg/m3, multiply by UNIT_CONVERSION_FACTOR
+
     # register all of the raster drivers
     gdal.AllRegister()
 
     mem_ds = gdal.GetDriverByName('MEM').Create(
-        options.outfile,
+        args.outfile,
         gdal_field.shape[1],
         gdal_field.shape[0],
         1,
@@ -157,10 +160,38 @@ def main():
     band.SetNoDataValue(-9999)
     band.WriteArray(gdal_field)
     band.FlushCache()
-    output_driver = gdal.GetDriverByName(options.format)
-    output_ds = output_driver.CreateCopy(options.outfile, mem_ds, 0)
+    output_driver = gdal.GetDriverByName(args.format)
+    output_ds = output_driver.CreateCopy(args.outfile, mem_ds, 0)
     output_ds = None
     mem_ds = None
+
+
+class VerboseAction(argparse.Action):
+    
+    """Argparse action to handle terminal verbosity level."""
+    
+    def __init__(self, option_strings, dest,
+                 default=logging.WARNING, help=None):
+        baselogger = logging.getLogger('')
+        baselogger.setLevel(logging.DEBUG)
+        self._loghandler = logging.StreamHandler()
+        self._loghandler.setLevel(default)
+        format = ': '.join((sys.argv[0], '%(levelname)s', '%(message)s'))
+        streamformatter = logging.Formatter(format)
+        self._loghandler.setFormatter(streamformatter)
+        baselogger.addHandler(self._loghandler)
+        super(VerboseAction, self).__init__(
+            option_strings, dest,
+            nargs=0,
+            default=default,
+            help=help,
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        currentlevel = getattr(namespace, self.dest, logging.WARNING)
+        self._loghandler.setLevel(currentlevel - 10)
+        setattr(namespace, self.dest, self._loghandler.level)
+
 
 if __name__ == '__main__':
     main()

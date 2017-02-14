@@ -72,14 +72,14 @@ SECTORS = OrderedDict(
 )
 
 
-def xy2lonlat(proj4, x, y):
-    source_srs = osr.SpatialReference()
-    source_srs.ImportFromProj4(proj4.encode('ascii'))
-    target_srs = osr.SpatialReference()
-    target_srs.ImportFromEPSG(4326)  # wgs84 lat lon
-    coord_trans = osr.CoordinateTransformation(source_srs, target_srs)
-    lon, lat, _ = coord_trans.TransformPoint(x, y)
-    return (lon, lat)
+# def xy2lonlat(proj4, x, y):
+#     source_srs = osr.SpatialReference()
+#     source_srs.ImportFromProj4(proj4.encode('ascii'))
+#     target_srs = osr.SpatialReference()
+#     target_srs.ImportFromEPSG(4326)  # wgs84 lat lon
+#     coord_trans = osr.CoordinateTransformation(source_srs, target_srs)
+#     lon, lat, _ = coord_trans.TransformPoint(x, y)
+#     return (lon, lat)
 
 
 def add_point_source(data, extent, x, y, value):
@@ -109,39 +109,22 @@ def create_grib(extent, nx, ny, proj4):
     x1, y1, x2, y2 = extent
     dx = (x2 - x1) / nx
     dy = (y2 - y1) / ny
-    lat, lon = xy2lonlat(proj4, x1, y1)
+    lonw, lats = pg.proj4_inv(x1, y1, proj4)
 
     proj = {}
-    proj["lonw"] = lon
-    proj["lats"] = lat
+    proj['proj4'] = proj4
+    proj["lonw"] = lonw
+    proj["lats"] = lats
     proj["dlon"] = dx  # may be in meters
     proj["dlat"] = dy  # may be in meters
     proj["nx"] = nx
     proj["ny"] = ny
+    proj["projid"] = 99
     
     g = pg.seed()
     g.setprojection(proj)
+
     return g
-
-
-def get_field_if_exist(fileprefix, par, lev, sort, surf, time, date):
-    """Get grb if it already exists."""
-
-    grbs = pg.open(fileprefix, "r", suffix='GRIB2', date=date)
-    if not grbs.has_par(
-            par, lev=lev, sort=sort,
-            time=time, surf=surf, date=date):
-        return None
-
-    grb = grbs.get_par(
-        par=[par],
-        lev=[lev],
-        sort=[sort],
-        surf=[surf],
-        time=time
-    )
-
-    return grb
 
 
 def extract_by_bbox(extent, nx, ny, bbox, strict_bounds=True):
@@ -405,14 +388,14 @@ def main():
         )
     else:
         date = pg.setdate(1971, 01, 01, 00, len=12)
-    
-    grb_data = None
-    outfile = pg.getfilename(args.outfile, "GRIB2", date)
+
+    outfile = pg.getfilename(args.outfile, "GRIB1", date)
+
     if not path.exists(outfile):
-        grbs = pg.open(args.outfile, "w", date=date, suffix='GRIB2')
+        grbs = pg.open(args.outfile, "w", date=date, suffix='GRIB1')
     else:
         # grb_old = get_field_if_exist(args.outfile, date)
-        grbs = pg.open(args.outfile, "a", suffix='GRIB2', date=date)
+        grbs = pg.open(args.outfile, "a", suffix='GRIB1', date=date)
 
     # register all of the raster drivers
     gdal.AllRegister()
@@ -463,7 +446,7 @@ def main():
 
     # fortran data ordering used in pygrib
     grb.setvalues(np.flipud(data).T)
-
+    
     grb.setpar(
         par,
         lev=lev,
@@ -471,14 +454,13 @@ def main():
         surf=args.surf,
         time=args.time
     )
-
-    if lev is not None:
-        grb.lev = lev
-
+    
     grbs.put(grb)
     log.info(
-        'Wrote par %s, lev %i to %s' % (grb.par, grb.lev, args.outfile)
+        'Wrote par %s, lev %i, sort %s surf %s to %s' % (
+            grb.par, grb.lev, grb.sort, grb.surf, args.outfile)
     )
+
     grbs.close()
 
 
