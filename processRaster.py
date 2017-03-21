@@ -192,6 +192,7 @@ def resampleBlock(block, cellFactor, method, nodata):
     newBlock = np.zeros((newNrows, newNcols))
 
     if cellFactor > 1:
+        cellFactor=int(cellFactor)
         if method == "sum":
             for row in range(newNrows):
                 for col in range(newNcols):
