@@ -726,6 +726,8 @@ def main():
         mem_ds.SetGeoTransform(outGeotransform)
         if options.toProj is not None:
             mem_ds.SetProjection(tgt_srs.ExportToWkt())
+        elif isinstance(proj,osr.SpatialReference):
+            mem_ds.SetProjection(proj.ExportToProj4())
         else:
             mem_ds.SetProjection(proj)
         outBand = mem_ds.GetRasterBand(1)
