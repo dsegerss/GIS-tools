@@ -40,31 +40,48 @@ SUBSTANCE2PAR = {
     'benzo_a_pyrene': 'BaP',
     'NMVOC': 'NMVOC',
     'PAH-4': 'PAH_4',
-    'CH4': 'CH4'
+    'CH4': 'CH4',
+    'OC': 'OC'
 }
 
 SECTORS = OrderedDict(
     [
-        ('01', {'long': 'Combustion in energy and transformation industries', 'short': 'Energy', 'lev': 1}),
-        ('02', {'long': 'Non-inudustrial combustion', 'short': 'Non-ind combustion', 'lev': 2}),
-        ('02.0201', {'long': 'Commercial and institutional plants', 'short': 'Commercial', 'lev': 201}),
-        ('02.0202', {'long': 'Residential plants', 'short': 'Residential', 'lev': 202}),
-        ('02.0203', {'long': 'Agriculture, forestry and aquaculture', 'short': 'Other', 'lev': 203}),
-        ('03', {'long': 'Combustion in manufacturing industry', 'short': 'Industry', 'lev': 3}),
+        ('01', {'long': 'Combustion in energy and transformation industries',
+                'short': 'Energy', 'lev': 1}),
+        ('02', {'long': 'Non-inudustrial combustion',
+                'short': 'Non-ind combustion', 'lev': 2}),
+        ('0201', {'long': 'Commercial and institutional plants',
+                  'short': 'Commercial', 'lev': 201}),
+        ('0202', {'long': 'Residential plants',
+                  'short': 'Residential', 'lev': 202}),
+        ('0203', {'long': 'Agriculture, forestry and aquaculture',
+                  'short': 'Other', 'lev': 203}),
+        ('03', {'long': 'Combustion in manufacturing industry',
+                'short': 'Industry', 'lev': 3}),
         ('04', {'long': 'Production processes', 'short': 'Process', 'lev': 4}),
-        ('05', {'long': 'Extraction and distribution of fossil fuels and geothermal energy', 'short': 'Extraction', 'lev': 5}),
-        ('06', {'long': 'Solvent and other product use', 'short': 'Solvent', 'lev': 6}),
-        ('07', {'long': 'Road import pdb; pdb.set_trace()ansport', 'short': 'Road transport', 'lev': 7}),
-        ('07.0701_0705', {'long': 'Road transport - exhaust', 'short': 'Road exhaust', 'lev': 7015}),
-        ('07.0706_0708', {'long': 'Road transport - non-exhaust', 'short': 'Road non-exhaust', 'lev': 768}),
-        ('08', {'long': 'Other mobile sources and machinery', 'short': 'Off-road', 'lev': 8}),
-        ('08.0801', {'long': 'Military', 'short': 'Military', 'lev': 801}),
-        ('08.0802', {'long': 'Railways', 'short': 'Railways', 'lev': 802}),
-        ('08.080501_080502', {'long': 'Aviation - LTO', 'short': 'Aviation', 'lev': 8512}),
-        ('08.0806_0807', {'long': 'Agriculture and forestry', 'short': 'Agriculture and forestry', 'lev': 867}),
-        ('08.0808', {'long': 'Industry', 'short': 'Industry', 'lev': 808}),
-        ('08.0809', {'long': 'Houshold and gardening', 'short': 'Household', 'lev': 809}),
-        ('08.0810', {'long': 'Other off-road', 'short': 'Other off-road', 'lev': 810}),
+        ('05', {'long': 'Extraction and distribution of fossil fuels and geothermal energy',
+                'short': 'Extraction', 'lev': 5}),
+        ('06', {'long': 'Solvent and other product use',
+                'short': 'Solvent', 'lev': 6}),
+        ('07', {'long': 'Road import pdb; pdb.set_trace()ansport',
+                'short': 'Road transport', 'lev': 7}),
+        ('0701-0705', {'long': 'Road transport - exhaust',
+                       'short': 'Road exhaust', 'lev': 7015}),
+        ('0706-0708', {'long': 'Road transport - non-exhaust',
+                       'short': 'Road non-exhaust', 'lev': 768}),
+        ('08', {'long': 'Other mobile sources and machinery',
+                'short': 'Off-road', 'lev': 8}),
+        ('0801', {'long': 'Military', 'short': 'Military', 'lev': 801}),
+        ('0802', {'long': 'Railways', 'short': 'Railways', 'lev': 802}),
+        ('080501-080502', {'long': 'Aviation - LTO',
+                           'short': 'Aviation', 'lev': 8512}),
+        ('0806-0807', {'long': 'Agriculture and forestry',
+                       'short': 'Agriculture and forestry', 'lev': 867}),
+        ('0808', {'long': 'Industry', 'short': 'Industry', 'lev': 808}),
+        ('0809', {'long': 'Houshold and gardening',
+                  'short': 'Household', 'lev': 809}),
+        ('0810', {'long': 'Other off-road',
+                  'short': 'Other off-road', 'lev': 810}),
         ('09', {'long': 'Waste treatment and disposal', 'short': 'Waste', 'lev': 9}),
         ('10', {'long': 'Agriculture', 'short': 'Agriculture', 'lev': 10}),
         ('shipping', {'long': 'Shipping', 'short': 'Shipping', 'lev': 11})
@@ -120,7 +137,7 @@ def create_grib(extent, nx, ny, proj4):
     proj["nx"] = nx
     proj["ny"] = ny
     proj["projid"] = 99
-    
+
     g = pg.seed()
     g.setprojection(proj)
 
@@ -128,7 +145,7 @@ def create_grib(extent, nx, ny, proj4):
 
 
 def extract_by_bbox(extent, nx, ny, bbox, strict_bounds=True):
-    
+
     xll, yll, xur, yur = extent
     dx = (xur - xll) / nx
     dy = (yur - yll) / ny
@@ -173,7 +190,7 @@ def extract_by_bbox(extent, nx, ny, bbox, strict_bounds=True):
         (abs(min(0, rowmin)), rowmax - rowmax_from_file),
         (abs(min(0, colmin)), colmax - colmax_from_file)
     )
-    
+
     extent = (
         xll + colmin * dx,
         yur - rowmax * dy,
@@ -265,7 +282,7 @@ def read_raster(filename, band=1, bbox=None,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-     
+
     parser.add_argument(
         action="store", dest="infile",
         help="Input raster file"
@@ -289,7 +306,7 @@ def main():
         action="store", dest="par",
         help="Par in output grib"
     )
-   
+
     parser.add_argument(
         "--lev", type=int,
         action="store", dest="lev", default=0,
@@ -313,7 +330,7 @@ def main():
         action='store', dest="time", default='YEARACCUM',
         help='Time repr. in target grib file'
     )
- 
+
     parser.add_argument(
         "--overwrite",
         action="store_true", dest="overwrite",
@@ -340,7 +357,7 @@ def main():
         metavar=('X1', 'Y1', 'X2', 'Y2'),
         help='Extent of target GRIB file (default is extent of raster)'
     )
-    
+
     parser.add_argument(
         '--pointsources',
         action='store', dest='pointsources',
@@ -353,7 +370,7 @@ def main():
         action=VerboseAction, dest='loglevel', default=logging.WARNING,
         help='increase verbosity in terminal'
     )
-    
+
     args = parser.parse_args()
 
     if args.name_pattern is None:
@@ -423,14 +440,29 @@ def main():
         pstable = open(args.pointsources, 'r')
         psreader = csv.DictReader(pstable,  delimiter=b';')
         ps_emis_tot = 0
-        for row in psreader:
+        for rownr, row in enumerate(psreader):
+            if args.timestamp is not None:
+                year = int(row['Year'])
+                if year != args.timestamp.year:
+                    continue
+
             code = row['SNAP_sector_code']
             if code not in SECTORS:
                 log.error('Sector code of point source %s not defined' % code)
+                sys.exit(1)
             if sector == code:
                 emis = row.get(substance, 0)
-                if emis != 0 and emis != '':
-                    emis = float(emis)
+                if emis != 0 and emis.strip() != '':
+                    try:
+                        emis = float(emis)
+                    except ValueError:
+                        log.error(
+                            'invalid point-source emission value ' +
+                            '%s on row %i in %s' %
+                            (str(emis), rownr, args.pointsources)
+                        )
+                        sys.exit(1)
+
                     ps_x = float(row['X_ETRS89'])
                     ps_y = float(row['Y_ETRS89'])
                     add_point_source(data, extent, ps_x, ps_y, emis)
@@ -446,7 +478,7 @@ def main():
 
     # fortran data ordering used in pygrib
     grb.setvalues(np.flipud(data).T)
-    
+
     grb.setpar(
         par,
         lev=lev,
@@ -454,7 +486,7 @@ def main():
         surf=args.surf,
         time=args.time
     )
-    
+
     grbs.put(grb)
     log.info(
         'Wrote par %s, lev %i, sort %s surf %s to %s' % (
@@ -465,9 +497,9 @@ def main():
 
 
 class VerboseAction(argparse.Action):
-    
+
     """Argparse action to handle terminal verbosity level."""
-    
+
     def __init__(self, option_strings, dest,
                  default=logging.WARNING, help=None):
         baselogger = logging.getLogger('')
@@ -489,8 +521,7 @@ class VerboseAction(argparse.Action):
         currentlevel = getattr(namespace, self.dest, logging.WARNING)
         self._loghandler.setLevel(currentlevel - 10)
         setattr(namespace, self.dest, self._loghandler.level)
-        
+
 
 if __name__ == "__main__":
     main()
-

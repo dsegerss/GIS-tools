@@ -28,7 +28,7 @@ import numpy as np
 
 # pyAirviro-modules
 from pyAirviro.other import datatable
-from  pyAirviro.other.utilities import ProgressBar
+from pyAirviro.other.utilities import ProgressBar
 from pyAirviro.other.logging import get_loglevel
 
 try:
@@ -46,7 +46,7 @@ version = "%prog 1.0"
 
 if __gdal_loaded__:
     gdalDataTypes = {"Float32": GDT_Float32,
-                     "Int16":GDT_Int16}
+                     "Int16": GDT_Int16}
     ogrDataTypes = {"Real": ogr.OFTReal,
                     "Integer": ogr.OFTInteger}
 
@@ -71,7 +71,7 @@ def block2vector(block, layer, xll, yll, cellsizeX, cellsizeY,
     @param filter: value to be excluded in output shape file
     """
     nrows, ncols = block.shape
-    #start loop at first row, first col
+    # start loop at first row, first col
     yul = yll - nrows * cellsizeY  # cellsizeY is negative
 
     for row in np.arange(nrows):
@@ -84,7 +84,7 @@ def block2vector(block, layer, xll, yll, cellsizeX, cellsizeY,
             polygon = ogr.Geometry(ogr.wkbPolygon)
             ring = ogr.Geometry(ogr.wkbLinearRing)
 
-            #Keep in mind that cellsizeY is assumed to be negative
+            # Keep in mind that cellsizeY is assumed to be negative
             ring.AddPoint(xll + col * cellsizeX,
                           yul + (row + 1) * cellsizeY)  # lower left corner
             ring.AddPoint(xll + col * cellsizeX,
@@ -95,7 +95,7 @@ def block2vector(block, layer, xll, yll, cellsizeX, cellsizeY,
                           yul + (row + 1) * cellsizeY)  # lower right corner
             ring.AddPoint(xll + col * cellsizeX,
                           yul + (row + 1) * cellsizeY)  # close ring
-            #ring.CloseRings()
+            # ring.CloseRings()
             polygon.AddGeometry(ring)
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
@@ -157,9 +157,9 @@ def printGridSummary(gridSummary, prefix=""):
     g["mean"] = g["sum"] / float(g["nrows"] * g["ncols"] - g["nnodata"])
     print 40 * "_"
     print prefix + "(xmin,xmax): (%f,%f)" % (g["xll"],
-                                    g["xll"] + g["ncols"] * g["cellsizeX"])
+                                             g["xll"] + g["ncols"] * g["cellsizeX"])
     print prefix + "(ymin,ymax): (%f,%f)" % (g["yll"],
-                                    g["yll"] + g["nrows"] * g["cellsizeY"])
+                                             g["yll"] + g["nrows"] * g["cellsizeY"])
     print prefix + "(cellsizeX,cellsizeY): (%f,%f)" % (g["cellsizeX"], g["cellsizeY"])
     print prefix + "(ncols,nrows): (%i,%i)" % (g["ncols"], g["nrows"])
     print prefix + "nodata value: %f" % g["nodatavalue"]
@@ -201,7 +201,7 @@ def resampleBlock(block, cellFactor, method, nodata):
                     newBlock[row, col] = cells.sum()
         elif method == "mean":
             for row in range(newNrows):
-                #print row/float(rast.nrows)
+                # print row/float(rast.nrows)
                 for col in range(newNcols):
                     cells = block[row * cellFactor: (row + 1) * cellFactor,
                                   col * cellFactor: (col + 1) * cellFactor]
@@ -269,8 +269,8 @@ def reprojectBlock(
             x_in = blockDef["xll"] + (inCol + 0.5) * blockDef["cellsize"]
             y_in = blockDef["yul"] - (inRow + 0.5) * blockDef["cellsize"]
 
-            import pdb;pdb.set_trace()
             # cell centre in target SRS
+
             x_out, y_out, z_out = coordTrans.TransformPoint(x_in, y_in)
 
             # check if outside target extent
@@ -410,7 +410,7 @@ def main():
     if len(args) > 0:
         parser.error("Incorrect number of arguments")
 
-    #validate infile path
+    # validate infile path
     if options.infileName is not None:
         inFilePath = path.abspath(options.infileName)
         if not path.exists(inFilePath):
@@ -419,7 +419,7 @@ def main():
     else:
         parser.error("No input data specified")
 
-    #validate outfile path
+    # validate outfile path
     if options.outfileName is not None:
         outFilePath = path.abspath(options.outfileName)
         if options.toShape and ".shp" not in outFilePath:
@@ -429,7 +429,7 @@ def main():
     else:
         outFilePath = None
 
-    #Validate fieldName option
+    # Validate fieldName option
     if options.toShape:
         if options.fieldName == "":
             parser.error("fieldName can't be an empty string")
@@ -485,23 +485,23 @@ def main():
                                                  'count',
                                                  None):
 
-                log.error(
-                    "Invalid resampling method, valid options for grid " +
-                    "coarsening are 'sum' " +
-                    "and 'mean' and 'majority', " +
-                    "specified %s" % options.resamplingMethod
-                )
-                sys.exit(1)
+            log.error(
+                "Invalid resampling method, valid options for grid " +
+                "coarsening are 'sum' " +
+                "and 'mean' and 'majority', " +
+                "specified %s" % options.resamplingMethod
+            )
+            sys.exit(1)
 
         elif cellFactor < 1 and \
                 options.resamplingMethod not in ('keepTotal',
                                                  'keepValue',
                                                  None):
-                log.error(
-                    "Invalid resampling method, valid options for grid " +
-                    "coarsening are 'keepTotal' and 'keepValue'" +
-                    ", specified %s" % resamplingMethod)
-                sys.exit(1)
+            log.error(
+                "Invalid resampling method, valid options for grid " +
+                "coarsening are 'keepTotal' and 'keepValue'" +
+                ", specified %s" % resamplingMethod)
+            sys.exit(1)
 
         # setting default resampling methods
         if cellFactor > 1 and \
@@ -530,7 +530,7 @@ def main():
     gdal.AllRegister()
     ds = gdal.Open(inFilePath, GA_ReadOnly)
     if ds is None:
-        print 'Could not open ' + filename
+        print 'Could not open ' + inFilePath
         sys.exit(1)
 
     ncols = ds.RasterXSize
@@ -579,7 +579,7 @@ def main():
             sys.exit(1)
 
         # Check if totally outside raster extent
-        if x2 < xll or y2 < yll  or x1 > xur or y1 > yul:
+        if x2 < xll or y2 < yll or x1 > xur or y1 > yul:
             log.error("Trying to extract outside grid boundaries")
             sys.exit(1)
 
@@ -650,7 +650,6 @@ def main():
             src_srs.ImportFromProj4(options.fromProj)
         tgt_srs = osr.SpatialReference()
         tgt_srs.ImportFromProj4(options.toProj)
-        import pdb;pdb.set_trace()
         coordTrans = osr.CoordinateTransformation(src_srs, tgt_srs)
 
         if options.template is None:
@@ -881,11 +880,6 @@ def main():
     for err, nerr in errDict.items():
         print "%s err in %i cells" % (err, nerr)
 
+
 if __name__ == "__main__":
     main()
-    # try:
-    #     main()
-    # except:
-    #     import pdb, sys
-    #     e, m, tb = sys.exc_info()
-    #     pdb.post_mortem(tb)
