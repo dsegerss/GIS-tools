@@ -250,9 +250,10 @@ def resampleBlock(block, cellFactor, method, nodata):
                     minRow = row * refinement
                     minCol = col * refinement
                     if val != nodata:
-                        newBlock[minRow: minRow + refinement,
-                                 minCol: minCol + refinement] = val / float(nSubcells)
-
+                        newBlock[
+                            minRow: minRow + refinement,
+                            minCol: minCol + refinement] = \
+                            val / float(nSubcells)
         else:
             raise IOError("Resampling method" +
                           "%s invalid for refinement" % method)
@@ -264,6 +265,7 @@ def reprojectBlock(
         outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
     for inRow in range(blockDef["nrows"]):
         for inCol in range(blockDef["ncols"]):
+
             val = block[inRow, inCol]
             # cell centre in source SRS
             x_in = blockDef["xll"] + (inCol + 0.5) * blockDef["cellsize"]
@@ -390,11 +392,11 @@ def main():
                       help="Input raster proj4 definition string")
 
     parser.add_option("--toProj", dest="toProj",
-                      help="Output raster proj4 definition string")
+                      help="Output raster epsg or proj4 definition string")
 
     (options, args) = parser.parse_args()
 
-    #------------Setting up logging capabilities -----------
+    # ------------Setting up logging capabilities -----------
     # Setup logging
     logging.basicConfig(
         format='%(levelname)s:%(name)s: %(message)s',
@@ -402,10 +404,10 @@ def main():
     )
     log = logging.getLogger(__name__)
 
-    #------------Process and validate options---------------
+    # ------------Process and validate options---------------
     if options.doc:
-        print doc
-        sys.exit()
+        print __doc__
+        sys.exit(0)
 
     if len(args) > 0:
         parser.error("Incorrect number of arguments")
@@ -551,6 +553,10 @@ def main():
     xll = xul
     yll = yul + nrows * cellsizeY  # cellsizeY should be a negative value
 
+    # Calculate upper right corner
+    xur = xul + cellsizeX * ncols
+    yur = yul
+
     # Rotated rasters not handled...yet
     if rot1 != 0 or rot2 != 0:
         print 'Rotated rasters are not supported by pyAirviro.geo.raster'
@@ -571,7 +577,6 @@ def main():
         nodata = -9999
     # Read data from a window defined by option --bbox <"x1,y1,x2,y2">
     if options.bbox is not None:
-        xur = xll + ncols * cellsizeX
         try:
             x1, y1, x2, y2 = map(float, options.bbox.split(","))
         except:
@@ -614,6 +619,8 @@ def main():
         xll = xll + colmin * cellsizeX
         yll = yul + (rowmax + 1) * cellsizeY  # cellsizeY is negative
         yul = yll - nrows * cellsizeY
+        yur = yul
+        xur = xll + ncols * cellsizeX
     else:
         rowmin = 0
         colmin = 0
@@ -648,21 +655,28 @@ def main():
         else:
             src_srs = osr.SpatialReference()
             src_srs.ImportFromProj4(options.fromProj)
+
         tgt_srs = osr.SpatialReference()
-        tgt_srs.ImportFromProj4(options.toProj)
+        if options.toProj.startswith("epsg"):
+            tgt_srs.ImportFromEPSG(int(options.toProj[5:]))
+        else:
+            tgt_srs.ImportFromProj4(options.toProj)
         coordTrans = osr.CoordinateTransformation(src_srs, tgt_srs)
 
+        newXur = None
+        newYur = None
         if options.template is None:
             # estimate extent from input
-            newNcols = ncols
-            newNrows = nrows
-            newCellsizeX = cellsizeX
-            newCellsizeY = cellsizeY
-            newNodata = nodata
+            newNcols = int(ncols / cellFactor)
+            newNrows = int(nrows / cellFactor)
             newXll, newYll, z = coordTrans.TransformPoint(xll, yll)
-            newXll = int(newXll)
-            newYll = int(newYll)
-            newYul = newYll - newNrows * newCellsizeY
+            newXur, newYur, z = coordTrans.TransformPoint(xur, yur)
+            newCellsizeX = (newXur - newXll) / float(newNcols)
+            newCellsizeY = (newYur - newYll) / float(newNrows)
+            newNodata = nodata
+            newXll = newXll
+            newYll = newYll
+            newYul = newYur
         else:
             header = open(options.template, "r").read()
             newNcols = int(
