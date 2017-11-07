@@ -218,7 +218,7 @@ def main():
                 
     if options.summarize:
         print "Raster"+24*' '+'Band Sum'
-        for key,rast in enumerate(bandList):
+        for key,rast in rastDict.iteritems():
             srcfile=srcfiles[int(key[1])]
             bandIndex=int(key.split(".")[1])
             print "%-30s%-5i%f" %(path.basename(srcfile),bandIndex,rast.sum())
