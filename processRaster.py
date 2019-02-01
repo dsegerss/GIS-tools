@@ -22,42 +22,30 @@ from os import path
 import sys
 import re
 import logging
-from optparse import OptionParser
+import argparse
 
 import numpy as np
 
-# pyAirviro-modules
-from pyAirviro.other import datatable
-from pyAirviro.other.utilities import ProgressBar
-from pyAirviro.other.logging import get_loglevel
-
-try:
-    from osgeo import osr
-    from osgeo import ogr
-    from osgeo import gdal
-    from osgeo.gdalconst import *
-    __gdal_loaded__ = True
-except:
-    __gdal_loaded__ = False
+from osgeo import osr
+from osgeo import ogr
+from osgeo import gdal
+from osgeo.gdalconst import GDT_Float32, GDT_Int16, GA_ReadOnly
 
 # Docstrings for the option parser
 usage = "usage: %prog [options] "
 version = "%prog 1.0"
 
-if __gdal_loaded__:
-    gdalDataTypes = {"Float32": GDT_Float32,
-                     "Int16": GDT_Int16}
-    ogrDataTypes = {"Real": ogr.OFTReal,
-                    "Integer": ogr.OFTInteger}
+
+gdalDataTypes = {"Float32": GDT_Float32, "Int16": GDT_Int16}
+ogrDataTypes = {"Real": ogr.OFTReal, "Integer": ogr.OFTInteger}
 
 
-# -----------Global variables -----------
-log = None
-# --------------------------------------
+log = logging.getLogger(__name__)
 
 
-def block2vector(block, layer, xll, yll, cellsizeX, cellsizeY,
-                 nodata, fieldName, filter=None):
+def block2vector(
+    block, layer, xll, yll, cellsizeX, cellsizeY, nodata, fieldName, filter=None
+):
     """
     Write a block to a polygon shape-file
     @param block: raster block
@@ -85,16 +73,21 @@ def block2vector(block, layer, xll, yll, cellsizeX, cellsizeY,
             ring = ogr.Geometry(ogr.wkbLinearRing)
 
             # Keep in mind that cellsizeY is assumed to be negative
-            ring.AddPoint(xll + col * cellsizeX,
-                          yul + (row + 1) * cellsizeY)  # lower left corner
-            ring.AddPoint(xll + col * cellsizeX,
-                          yul + (row + 2) * cellsizeY)  # upper left corner
-            ring.AddPoint(xll + col * cellsizeX + cellsizeX,
-                          yul + (row + 2) * cellsizeY)  # upper right corner
-            ring.AddPoint(xll + col * cellsizeX + cellsizeX,
-                          yul + (row + 1) * cellsizeY)  # lower right corner
-            ring.AddPoint(xll + col * cellsizeX,
-                          yul + (row + 1) * cellsizeY)  # close ring
+            ring.AddPoint(
+                xll + col * cellsizeX, yul + (row + 1) * cellsizeY
+            )  # lower left corner
+            ring.AddPoint(
+                xll + col * cellsizeX, yul + (row + 2) * cellsizeY
+            )  # upper left corner
+            ring.AddPoint(
+                xll + col * cellsizeX + cellsizeX, yul + (row + 2) * cellsizeY
+            )  # upper right corner
+            ring.AddPoint(
+                xll + col * cellsizeX + cellsizeX, yul + (row + 1) * cellsizeY
+            )  # lower right corner
+            ring.AddPoint(
+                xll + col * cellsizeX, yul + (row + 1) * cellsizeY
+            )  # close ring
             # ring.CloseRings()
             polygon.AddGeometry(ring)
             featureDefn = layer.GetLayerDefn()
@@ -155,20 +148,24 @@ def printGridSummary(gridSummary, prefix=""):
         prefix += ": "
     g = gridSummary
     g["mean"] = g["sum"] / float(g["nrows"] * g["ncols"] - g["nnodata"])
-    print 40 * "_"
-    print prefix + "(xmin,xmax): (%f,%f)" % (g["xll"],
-                                             g["xll"] + g["ncols"] * g["cellsizeX"])
-    print prefix + "(ymin,ymax): (%f,%f)" % (g["yll"],
-                                             g["yll"] + g["nrows"] * g["cellsizeY"])
-    print prefix + "(cellsizeX,cellsizeY): (%f,%f)" % (g["cellsizeX"], g["cellsizeY"])
-    print prefix + "(ncols,nrows): (%i,%i)" % (g["ncols"], g["nrows"])
-    print prefix + "nodata value: %f" % g["nodatavalue"]
-    print 40 * "-" + "\nStatistics:"
-    print prefix + "Sum: %f" % g["sum"]
-    print prefix + "Mean: %f" % g["mean"]
-    print prefix + "Number of nodata values: %i" % g["nnodata"]
-    print prefix + "Number of negative values: %i" % g["nnegative"]
-    print 40 * "_"
+    print(40 * "_")
+    print(
+        prefix
+        + "(xmin,xmax): (%f,%f)" % (g["xll"], g["xll"] + g["ncols"] * g["cellsizeX"])
+    )
+    print(
+        prefix
+        + "(ymin,ymax): (%f,%f)" % (g["yll"], g["yll"] + g["nrows"] * g["cellsizeY"])
+    )
+    print(prefix + "(cellsizeX,cellsizeY): (%f,%f)" % (g["cellsizeX"], g["cellsizeY"]))
+    print(prefix + "(ncols,nrows): (%i,%i)" % (g["ncols"], g["nrows"]))
+    print(prefix + "nodata value: %f" % g["nodatavalue"])
+    print(40 * "-" + "\nStatistics:")
+    print(prefix + "Sum: %f" % g["sum"])
+    print(prefix + "Mean: %f" % g["mean"])
+    print(prefix + "Number of nodata values: %i" % g["nnodata"])
+    print(prefix + "Number of negative values: %i" % g["nnegative"])
+    print(40 * "_")
 
 
 def resampleBlock(block, cellFactor, method, nodata):
@@ -185,33 +182,41 @@ def resampleBlock(block, cellFactor, method, nodata):
 
     if cellFactor > 1:
         if orgNcols % cellFactor != 0 or orgNrows % cellFactor != 0:
-            raise ValueError("Raster dimensions have to be dividable" +
-                             "with the cellFactor for resampling")
+            raise ValueError(
+                "Raster dimensions have to be dividable"
+                + "with the cellFactor for resampling"
+            )
     newNcols = int(orgNcols / cellFactor)
     newNrows = int(orgNrows / cellFactor)
     newBlock = np.zeros((newNrows, newNcols))
 
     if cellFactor > 1:
-        cellFactor=int(cellFactor)
+        cellFactor = int(cellFactor)
         if method == "sum":
             for row in range(newNrows):
                 for col in range(newNcols):
-                    cells = block[row * cellFactor:(row + 1) * cellFactor,
-                                  col * cellFactor: (col + 1) * cellFactor]
+                    cells = block[
+                        row * cellFactor : (row + 1) * cellFactor,
+                        col * cellFactor : (col + 1) * cellFactor,
+                    ]
                     cells = np.where(cells != nodata, cells, 0)
                     newBlock[row, col] = cells.sum()
         elif method == "mean":
             for row in range(newNrows):
                 # print row/float(rast.nrows)
                 for col in range(newNcols):
-                    cells = block[row * cellFactor: (row + 1) * cellFactor,
-                                  col * cellFactor: (col + 1) * cellFactor]
+                    cells = block[
+                        row * cellFactor : (row + 1) * cellFactor,
+                        col * cellFactor : (col + 1) * cellFactor,
+                    ]
                     newBlock[row, col] = cells.mean()
         elif method == "majority":
             for row in range(newNrows):
                 for col in range(newNcols):
-                    cells = block[row * cellFactor: (row + 1) * cellFactor,
-                                  col * cellFactor: (col + 1) * cellFactor]
+                    cells = block[
+                        row * cellFactor : (row + 1) * cellFactor,
+                        col * cellFactor : (col + 1) * cellFactor,
+                    ]
                     maxCountVal = -9e99
                     maxCount = 0
                     for val in cells.unique():
@@ -223,25 +228,26 @@ def resampleBlock(block, cellFactor, method, nodata):
         elif method == "count":
             for row in range(newNrows):
                 for col in range(newNcols):
-                    cells = block[row * cellFactor:(row + 1) * cellFactor,
-                                  col * cellFactor: (col + 1) * cellFactor]
+                    cells = block[
+                        row * cellFactor : (row + 1) * cellFactor,
+                        col * cellFactor : (col + 1) * cellFactor,
+                    ]
                     cells = np.where(cells > 0, cells, 0)
                     newBlock[row, col] = cells.sum()
         else:
-            raise IOError("Resampling method " +
-                          "%s invalid for coarsening" % method)
+            raise IOError("Resampling method " + "%s invalid for coarsening" % method)
     else:
         refinement = int(1 / cellFactor)
-        newBlock = np.zeros(
-            (block.shape[0] * refinement, block.shape[1] * refinement))
+        newBlock = np.zeros((block.shape[0] * refinement, block.shape[1] * refinement))
 
         if method == "keepValue":
             for row in range(orgNrows):
                 for col in range(orgNcols):
                     minRow = row * refinement
                     minCol = col * refinement
-                    newBlock[minRow: minRow + refinement,
-                             minCol: minCol + refinement] = block[row, col]
+                    newBlock[
+                        minRow : minRow + refinement, minCol : minCol + refinement
+                    ] = block[row, col]
 
         elif method == "keepTotal":
             nSubcells = pow(refinement, 2)
@@ -252,18 +258,15 @@ def resampleBlock(block, cellFactor, method, nodata):
                     minCol = col * refinement
                     if val != nodata:
                         newBlock[
-                            minRow: minRow + refinement,
-                            minCol: minCol + refinement] = \
-                            val / float(nSubcells)
+                            minRow : minRow + refinement, minCol : minCol + refinement
+                        ] = val / float(nSubcells)
         else:
-            raise IOError("Resampling method" +
-                          "%s invalid for refinement" % method)
+            raise IOError("Resampling method" + "%s invalid for refinement" % method)
 
     return newBlock
 
 
-def reprojectBlock(
-        outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
+def reprojectBlock(outArray, block, cellFactor, blockDef, outDef, coordTrans, nvals):
     for inRow in range(blockDef["nrows"]):
         for inCol in range(blockDef["ncols"]):
 
@@ -277,12 +280,14 @@ def reprojectBlock(
             x_out, y_out, z_out = coordTrans.TransformPoint(x_in, y_in)
 
             # check if outside target extent
-            if((x_out < outDef["xll"] or y_out < outDef["yll"]) or
-               (x_out > outDef["xur"] or y_out > outDef["yul"])):
+            if (x_out < outDef["xll"] or y_out < outDef["yll"]) or (
+                x_out > outDef["xur"] or y_out > outDef["yul"]
+            ):
                 continue
             outCol = int((x_out - outDef["xll"]) / outDef["cellsize"])
             outRow = outDef["nrows"] - int(
-                np.ceil((y_out - outDef["yll"]) / outDef["cellsize"]))
+                np.ceil((y_out - outDef["yll"]) / outDef["cellsize"])
+            )
             if outRow == outDef["nrows"]:
                 outRow -= 1
             if outCol == outDef["ncols"]:
@@ -294,246 +299,295 @@ def reprojectBlock(
 
 def main():
     # -----------Setting up and unsing option parser-----------------------
-    parser = OptionParser(usage=usage, version=version)
 
-    parser.add_option("-d", "--doc",
-                      action="store_true", dest="doc",
-                      help="Prints more detailed documentation and exit")
+    parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_option("-v",
-                      action="store_const", const=logging.DEBUG,
-                      dest="loglevel", default=get_loglevel(),
-                      help="Produce verbose output")
+    parser.add_argument(
+        "-d",
+        "--doc",
+        action="store_true",
+        dest="doc",
+        help="Prints more detailed documentation and exit",
+    )
 
-    parser.add_option("--no-progress",
-                      action="store_const", dest="progressStream",
-                      const=None, default=sys.stdout,
-                      help="turn off the progress bar")
+    parser.add_argument(
+        "-v",
+        action=VerboseAction,
+        dest="loglevel",
+        default=logging.WARNING,
+        help="increase verbosity in terminal",
+    )
 
-    parser.add_option("-o", "--output",
-                      action="store", dest="outfileName", default=None,
-                      help="Output file")
+    parser.add_argument(
+        "-o",
+        "--output",
+        action="store",
+        dest="outfileName",
+        default=None,
+        help="Output file",
+    )
 
-    parser.add_option("-i", "--input",
-                      action="store", dest="infileName",
-                      help="Input raster")
+    parser.add_argument(
+        "-i", "--input", action="store", dest="infileName", help="Input raster"
+    )
 
-    parser.add_option("--bbox",
-                      action="store", dest="bbox",
-                      help="Only read data within bbox," +
-                      " --box <\"x1,y1,x2,y2\"")
+    parser.add_argument(
+        "--bbox",
+        action="store",
+        dest="bbox",
+        help="Only read data within bbox," + ' --box <"x1,y1,x2,y2"',
+    )
 
-    parser.add_option("--reclassify",
-                      action="store", dest="classTable",
-                      help="Tab-separated table with code " +
-                      "and z0 value for each landuse class")
+    parser.add_argument(
+        "--reclassify",
+        action="store",
+        dest="classTable",
+        help="Tab-separated table with code " + "and z0 value for each landuse class",
+    )
 
-    parser.add_option("--reclassFromColumn",
-                      action="store", dest="reclassFromColumn",
-                      help="Header of reclass table column " +
-                      "containing values to " +
-                      "reclass (default is to use first column of classTable)")
+    parser.add_argument(
+        "--reclassFromColumn",
+        action="store",
+        dest="reclassFromColumn",
+        help="Header of reclass table column "
+        + "containing values to "
+        + "reclass (default is to use first column of classTable)",
+    )
 
-    parser.add_option("--reclassToColumn",
-                      action="store", dest="reclassToColumn",
-                      help="Header of reclass table column containing codes," +
-                      " default is to use first column (default is to use " +
-                      "second column of classTable)")
+    parser.add_argument(
+        "--reclassToColumn",
+        action="store",
+        dest="reclassToColumn",
+        help="Header of reclass table column containing codes,"
+        + " default is to use first column (default is to use "
+        + "second column of classTable)",
+    )
 
-    parser.add_option("--resample",
-                      action="store", dest="cellFactor",
-                      help="Resample grid by dividing cellsize with a" +
-                      " factor. Factor <1 results in refinement." +
-                      " Reprojection uses temporary refinement")
+    parser.add_argument(
+        "--resample",
+        action="store",
+        dest="cellFactor",
+        help="Resample grid by dividing cellsize with a"
+        + " factor. Factor <1 results in refinement."
+        + " Reprojection uses temporary refinement",
+    )
 
-    parser.add_option("--resamplingMethod",
-                      action="store", dest="resamplingMethod",
-                      help="For cellFactor > 1: " +
-                      "Choose between 'mean', 'sum', 'majority' or" +
-                      " 'count', default is sum,"
-                      "For cellFactor < 1, choose between: " +
-                      "'keepTotal' and 'keepValue', default is 'keepTotal'")
+    parser.add_argument(
+        "--resamplingMethod",
+        action="store",
+        dest="resamplingMethod",
+        help="For cellFactor > 1: "
+        + "Choose between 'mean', 'sum', 'majority' or"
+        + " 'count', default is sum,"
+        "For cellFactor < 1, choose between: "
+        + "'keepTotal' and 'keepValue', default is 'keepTotal'",
+    )
 
-    parser.add_option("--summarize",
-                      action="store_true", dest="summarize",
-                      help="Print a summary of the input grid properties")
+    parser.add_argument(
+        "--summarize",
+        action="store_true",
+        dest="summarize",
+        help="Print a summary of the input grid properties",
+    )
 
-    parser.add_option("--bandIndex",
-                      action="store", dest="bandIndex",
-                      help="Band index to read from",
-                      default=1)
+    parser.add_argument(
+        "--bandIndex",
+        action="store",
+        dest="bandIndex",
+        help="Band index to read from",
+        default=1,
+    )
 
-    parser.add_option("--dataType",
-                      action="store", dest="dataType",
-                      help="Output raster/shape data type",
-                      default=None)
+    parser.add_argument(
+        "--dataType",
+        action="store",
+        dest="dataType",
+        help="Output raster/shape data type",
+        default=None,
+    )
 
-    parser.add_option("--toShape",
-                      action="store_true", dest="toShape",
-                      help="output as shape file",
-                      default=None)
+    parser.add_argument(
+        "--toShape",
+        action="store_true",
+        dest="toShape",
+        help="output as shape file",
+        default=None,
+    )
 
-    parser.add_option("--fieldName", metavar='FIELD',
-                      action="store", dest="fieldName",
-                      help="write data in shape file to FIELD," +
-                      " default is 'value'",
-                      default=None)
+    parser.add_argument(
+        "--fieldName",
+        metavar="FIELD",
+        action="store",
+        dest="fieldName",
+        help="write data in shape file to FIELD," + " default is 'value'",
+        default=None,
+    )
 
-    parser.add_option("--filter",
-                      action="store", dest="filter",
-                      help="Filter out data equal or below" +
-                      " limit in shape output",
-                      default=None)
+    parser.add_argument(
+        "--filter",
+        action="store",
+        dest="filter",
+        help="Filter out data equal or below" + " limit in shape output",
+        default=None,
+    )
 
-    parser.add_option("-t", "--template",
-                      action="store", dest="template",
-                      help="Header for output raster when reprojecting")
+    parser.add_argument(
+        "-t",
+        "--template",
+        action="store",
+        dest="template",
+        help="Header for output raster when reprojecting",
+    )
 
-    parser.add_option("--fromProj", dest="fromProj",
-                      help="Input raster proj4 definition string")
+    parser.add_argument(
+        "--fromProj", dest="fromProj", help="Input raster proj4 definition string"
+    )
 
-    parser.add_option("--toProj", dest="toProj",
-                      help="Output raster epsg or proj4 definition string")
+    parser.add_argument(
+        "--toProj", dest="toProj", help="Output raster epsg or proj4 definition string"
+    )
 
-    (options, args) = parser.parse_args()
+    args = parser.parse_args()
 
     # ------------Setting up logging capabilities -----------
     # Setup logging
     logging.basicConfig(
-        format='%(levelname)s:%(name)s: %(message)s',
-        level=options.loglevel,
+        format="%(levelname)s:%(name)s: %(message)s", level=args.loglevel
     )
     log = logging.getLogger(__name__)
 
     # ------------Process and validate options---------------
-    if options.doc:
-        print __doc__
+    if args.doc:
+        print(__doc__)
         sys.exit(0)
 
     if len(args) > 0:
         parser.error("Incorrect number of arguments")
 
     # validate infile path
-    if options.infileName is not None:
-        inFilePath = path.abspath(options.infileName)
+    if args.infileName is not None:
+        inFilePath = path.abspath(args.infileName)
         if not path.exists(inFilePath):
-            log.error("Input raster %s does not exist" % options.infileName)
+            log.error("Input raster %s does not exist" % args.infileName)
             sys.exit(1)
     else:
         parser.error("No input data specified")
 
     # validate outfile path
-    if options.outfileName is not None:
-        outFilePath = path.abspath(options.outfileName)
-        if options.toShape and ".shp" not in outFilePath:
-            parser.error("Output shape has to to be specified with" +
-                         " .shp extension")
+    if args.outfileName is not None:
+        outFilePath = path.abspath(args.outfileName)
+        if args.toShape and ".shp" not in outFilePath:
+            parser.error("Output shape has to to be specified with" + " .shp extension")
 
     else:
         outFilePath = None
 
     # Validate fieldName option
-    if options.toShape:
-        if options.fieldName == "":
+    if args.toShape:
+        if args.fieldName == "":
             parser.error("fieldName can't be an empty string")
-        fieldName = options.fieldName or "value"
-    elif options.fieldName is not None:
-        parser.error("fieldName option only allowed together" +
-                     " with shape output")
+        fieldName = args.fieldName or "value"
+    elif args.fieldName is not None:
+        parser.error("fieldName option only allowed together" + " with shape output")
 
     # Validate filter option and convert filter to numeric value if present
-    if not options.toShape and options.filter is not None:
+    if not args.toShape and args.filter is not None:
         parser.error("Filter option only allowed together with shape output")
-    elif options.toShape:
-        if options.filter is not None:
-            filter = float(options.filter)
+    elif args.toShape:
+        if args.filter is not None:
+            filter = float(args.filter)
         else:
             filter = None
 
     # read and process reclass table file
-    if options.classTable is not None:
-        reclassFromColumn = options.reclassFromColumn
-        reclassToColumn = options.reclassToColumn
+    if args.classTable is not None:
+        raise NotImplementedError("needs to be rewritten without pyAirviro")
+        # reclassFromColumn = args.reclassFromColumn
+        # reclassToColumn = args.reclassToColumn
 
-        if reclassFromColumn is not None and reclassToColumn is not None:
+        # if reclassFromColumn is not None and reclassToColumn is not None:
 
-            desc = [{"id": reclassFromColumn, "type": float},
-                    {"id": reclassToColumn, "type": float}]
+        #     desc = [
+        #         {"id": reclassFromColumn, "type": float},
+        #         {"id": reclassToColumn, "type": float},
+        #     ]
 
-            classTable = datatable.DataTable(desc=desc)
-            classTable.read(options.classTable)
-        else:
-            classTable = datatable.DataTable()
-            classTable.read(options.classTable)
-            reclassFromColumn = classTable.desc[0]["id"]
-            reclassToColumn = classTable.desc[1]["id"]
-            classTable.convertCol(reclassFromColumn, float)
-            classTable.convertCol(reclassToColumn, float)
+        #     classTable = datatable.DataTable(desc=desc)
+        #     classTable.read(args.classTable)
+        # else:
+        #     classTable = datatable.DataTable()
+        #     classTable.read(args.classTable)
+        #     reclassFromColumn = classTable.desc[0]["id"]
+        #     reclassToColumn = classTable.desc[1]["id"]
+        #     classTable.convertCol(reclassFromColumn, float)
+        #     classTable.convertCol(reclassToColumn, float)
 
-        classTable.setKeys([reclassFromColumn])
+        # classTable.setKeys([reclassFromColumn])
 
-        log.debug("Successfully read landuse class table")
+        # log.debug("Successfully read landuse class table")
 
-        classDict = {}
-        for row in classTable.data:
-            classDict[row[classTable.colIndex[reclassFromColumn]]
-                      ] = row[classTable.colIndex[reclassToColumn]]
+        # classDict = {}
+        # for row in classTable.data:
+        #     classDict[row[classTable.colIndex[reclassFromColumn]]] = row[
+        #         classTable.colIndex[reclassToColumn]
+        #     ]
 
-    if options.cellFactor is not None:
-        cellFactor = float(options.cellFactor)
-        if cellFactor > 1 and \
-                options.resamplingMethod not in ('sum',
-                                                 'mean',
-                                                 'majority',
-                                                 'count',
-                                                 None):
+    if args.cellFactor is not None:
+        cellFactor = float(args.cellFactor)
+        if cellFactor > 1 and args.resamplingMethod not in (
+            "sum",
+            "mean",
+            "majority",
+            "count",
+            None,
+        ):
 
             log.error(
-                "Invalid resampling method, valid options for grid " +
-                "coarsening are 'sum' " +
-                "and 'mean' and 'majority', " +
-                "specified %s" % options.resamplingMethod
+                "Invalid resampling method, valid options for grid "
+                + "coarsening are 'sum' "
+                + "and 'mean' and 'majority', "
+                + "specified %s" % args.resamplingMethod
             )
             sys.exit(1)
 
-        elif cellFactor < 1 and \
-                options.resamplingMethod not in ('keepTotal',
-                                                 'keepValue',
-                                                 None):
+        elif cellFactor < 1 and args.resamplingMethod not in (
+            "keepTotal",
+            "keepValue",
+            None,
+        ):
             log.error(
-                "Invalid resampling method, valid options for grid " +
-                "coarsening are 'keepTotal' and 'keepValue'" +
-                ", specified %s" % resamplingMethod)
+                "Invalid resampling method, valid options for grid "
+                + "coarsening are 'keepTotal' and 'keepValue'"
+                + ", specified %s" % args.resamplingMethod
+            )
             sys.exit(1)
 
         # setting default resampling methods
-        if cellFactor > 1 and \
-                options.resamplingMethod is None:
-            resamplingMethod = 'sum'
+        if cellFactor > 1 and args.resamplingMethod is None:
+            resamplingMethod = "sum"
 
-        elif options.resamplingMethod is None:
-            resamplingMethod = 'keepTotal'
+        elif args.resamplingMethod is None:
+            resamplingMethod = "keepTotal"
         else:
-            resamplingMethod = options.resamplingMethod
+            resamplingMethod = args.resamplingMethod
 
-        if options.resamplingMethod == 'majority' or \
-                options.resamplingMethod == 'count' and \
-                options.toProj is not None:
+        if (
+            args.resamplingMethod == "majority"
+            or args.resamplingMethod == "count"
+            and args.toProj is not None
+        ):
             log.error(
-                "Resampling method " +
-                "%s not possible to " % options.resamplingMethod +
-                "combine with reprojection")
+                "Resampling method "
+                + "%s not possible to " % args.resamplingMethod
+                + "combine with reprojection"
+            )
             sys.exit(1)
-
-    # Assure that gdal is present
-    if not __gdal_loaded__:
-        raise OSError("Function readGDAL needs GDAL with python bindings")
 
     # register all of the raster drivers
     gdal.AllRegister()
     ds = gdal.Open(inFilePath, GA_ReadOnly)
     if ds is None:
-        print 'Could not open ' + inFilePath
+        print("Could not open " + inFilePath)
         sys.exit(1)
 
     ncols = ds.RasterXSize
@@ -560,15 +614,14 @@ def main():
 
     # Rotated rasters not handled...yet
     if rot1 != 0 or rot2 != 0:
-        print 'Rotated rasters are not supported by pyAirviro.geo.raster'
+        print("Rotated rasters are not supported")
         sys.exit(1)
 
     if abs(cellsizeX) != abs(cellsizeY):
-        print('Non-homogenous cellsizes are not' +
-              ' supported by pyAirviro.geo.raster')
+        print("Non-homogenous cellsizes are not supported")
         sys.exit(1)
 
-    bandIndex = int(options.bandIndex)
+    bandIndex = int(args.bandIndex)
 
     band = ds.GetRasterBand(bandIndex)
     nodata = band.GetNoDataValue()
@@ -577,11 +630,11 @@ def main():
     if nodata is None:
         nodata = -9999
     # Read data from a window defined by option --bbox <"x1,y1,x2,y2">
-    if options.bbox is not None:
+    if args.bbox is not None:
         try:
-            x1, y1, x2, y2 = map(float, options.bbox.split(","))
+            x1, y1, x2, y2 = map(float, args.bbox.split(","))
         except:
-            log.error("Invalid value for option --bbox <\"x1,y1,x2,y2\">")
+            log.error('Invalid value for option --bbox <"x1,y1,x2,y2">')
             sys.exit(1)
 
         # Check if totally outside raster extent
@@ -627,7 +680,7 @@ def main():
         colmin = 0
 
     # process option for resampling
-    if options.cellFactor is not None:
+    if args.cellFactor is not None:
         cellFactor = float(cellFactor)
     else:
         cellFactor = 1
@@ -638,7 +691,7 @@ def main():
     else:
         procYBlockSize = 1
 
-    if options.toProj is None:
+    if args.toProj is None:
         # Set output raster dimensions and cellsize
         newNcols = int(ncols / cellFactor)
         newNrows = int(nrows / cellFactor)
@@ -651,22 +704,22 @@ def main():
 
     else:
         # Create coordinate transform
-        if options.fromProj is None:
+        if args.fromProj is None:
             src_srs = proj
         else:
             src_srs = osr.SpatialReference()
-            src_srs.ImportFromProj4(options.fromProj)
+            src_srs.ImportFromProj4(args.fromProj)
 
         tgt_srs = osr.SpatialReference()
-        if options.toProj.startswith("epsg"):
-            tgt_srs.ImportFromEPSG(int(options.toProj[5:]))
+        if args.toProj.startswith("epsg"):
+            tgt_srs.ImportFromEPSG(int(args.toProj[5:]))
         else:
-            tgt_srs.ImportFromProj4(options.toProj)
+            tgt_srs.ImportFromProj4(args.toProj)
         coordTrans = osr.CoordinateTransformation(src_srs, tgt_srs)
 
         newXur = None
         newYur = None
-        if options.template is None:
+        if args.template is None:
             # estimate extent from input
             newNcols = int(ncols / cellFactor)
             newNrows = int(nrows / cellFactor)
@@ -679,30 +732,23 @@ def main():
             newYll = newYll
             newYul = newYur
         else:
-            header = open(options.template, "r").read()
-            newNcols = int(
-                re.compile("ncols\s*([0-9]*)").search(header).group(1))
-            newNrows = int(
-                re.compile("nrows\s*([0-9]*)").search(header).group(1))
+            header = open(args.template, "r").read()
+            newNcols = int(re.compile("ncols\s*([0-9]*)").search(header).group(1))
+            newNrows = int(re.compile("nrows\s*([0-9]*)").search(header).group(1))
             newCellsizeX = float(
-                re.compile("cellsize\s*([0-9]*)").search(header).group(1))
+                re.compile("cellsize\s*([0-9]*)").search(header).group(1)
+            )
             newCellsizeY = -1 * newCellsizeX
             try:
                 newNodata = float(
-                    re.compile(
-                        "NODATA_value\s*(.*?)\n"
-                    ).search(header).group(1)
+                    re.compile("NODATA_value\s*(.*?)\n").search(header).group(1)
                 )
             except AttributeError:
                 newNodata = float(
-                    re.compile(
-                        "nodata_value\s*(.*?)\n"
-                    ).search(header).group(1)
+                    re.compile("nodata_value\s*(.*?)\n").search(header).group(1)
                 )
-            newXll = float(
-                re.compile("xllcorner\s*(.*?)\n").search(header).group(1))
-            newYll = float(
-                re.compile("yllcorner\s*(.*?)\n").search(header).group(1))
+            newXll = float(re.compile("xllcorner\s*(.*?)\n").search(header).group(1))
+            newYll = float(re.compile("yllcorner\s*(.*?)\n").search(header).group(1))
             newYul = newYll - newNrows * newCellsizeY
 
     # Processing of data is made for blocks of the following size
@@ -711,57 +757,55 @@ def main():
     procXBlockSize = ncols
 
     # process option for dataType
-    if options.toShape:
-        dataTypes, defaultDataType = ogrDataTypes, 'Real'
+    if args.toShape:
+        dataTypes, defaultDataType = ogrDataTypes, "Real"
     else:
-        dataTypes, defaultDataType = gdalDataTypes, 'Float32'
+        dataTypes, defaultDataType = gdalDataTypes, "Float32"
     try:
-        dataType = dataTypes[options.dataType or defaultDataType]
+        dataType = dataTypes[args.dataType or defaultDataType]
     except KeyError:
-        log.error(
-            "Unknown datatype choose between: %s" % ",".join(dataTypes.keys()))
+        log.error("Unknown datatype choose between: %s" % ",".join(dataTypes.keys()))
         sys.exit(1)
 
     # Create and configure output raster data source
-    if not options.toShape and outFilePath is not None:
+    if not args.toShape and outFilePath is not None:
         # Creates a raster dataset with 1 band
 
-        mem_ds = gdal.GetDriverByName('MEM').Create(outFilePath,
-                                                    newNcols,
-                                                    newNrows,
-                                                    1,
-                                                    dataType)
+        mem_ds = gdal.GetDriverByName("MEM").Create(
+            outFilePath, newNcols, newNrows, 1, dataType
+        )
 
         if mem_ds is None:
-            print "Error: could not create output raster"
+            print("Error: could not create output raster")
             sys.exit(1)
 
         outGeotransform = [newXll, newCellsizeX, 0, newYul, 0, newCellsizeY]
         mem_ds.SetGeoTransform(outGeotransform)
-        if options.toProj is not None:
+        if args.toProj is not None:
             mem_ds.SetProjection(tgt_srs.ExportToWkt())
-        elif isinstance(proj,osr.SpatialReference):
+        elif isinstance(proj, osr.SpatialReference):
             mem_ds.SetProjection(proj.ExportToProj4())
         else:
             mem_ds.SetProjection(proj)
         outBand = mem_ds.GetRasterBand(1)
         outBand.SetNoDataValue(newNodata)  # Set nodata-value
 
-    if options.toProj is not None:
+    if args.toProj is not None:
         outArray = np.zeros((newNrows, newNcols))
         nvals = np.zeros((newNrows, newNcols))
-        outDef = {"ncols": newNcols,
-                  "nrows": newNrows,
-                  "xll": newXll,
-                  "yll": newYll,
-                  "yul": newYll - newNrows * newCellsizeY,
-                  "xur": newXll + newNcols * newCellsizeX,
-                  "cellsize": newCellsizeX
-                  }
+        outDef = {
+            "ncols": newNcols,
+            "nrows": newNrows,
+            "xll": newXll,
+            "yll": newYll,
+            "yul": newYll - newNrows * newCellsizeY,
+            "xur": newXll + newNcols * newCellsizeX,
+            "cellsize": newCellsizeX,
+        }
 
     # Create and inititialize output vector data source
-    if options.toShape:
-        shapeDriver = ogr.GetDriverByName('ESRI Shapefile')
+    if args.toShape:
+        shapeDriver = ogr.GetDriverByName("ESRI Shapefile")
         if path.exists(outFilePath):
             shapeDriver.DeleteDataSource(outFilePath)
         shapeFile = shapeDriver.CreateDataSource(outFilePath)
@@ -773,58 +817,59 @@ def main():
         layer.CreateField(fieldDefn)
 
     # inititialize input grid summary
-    inputGridSummary = {"sum": 0,
-                        "mean": 0,
-                        "nnodata": 0,
-                        "nnegative": 0,
-                        "xll": xll,
-                        "yll": yll,
-                        "ncols": ncols,
-                        "nrows": nrows,
-                        "cellsizeX": cellsizeX,
-                        "cellsizeY": cellsizeY,
-                        "nodatavalue": nodata}
+    inputGridSummary = {
+        "sum": 0,
+        "mean": 0,
+        "nnodata": 0,
+        "nnegative": 0,
+        "xll": xll,
+        "yll": yll,
+        "ncols": ncols,
+        "nrows": nrows,
+        "cellsizeX": cellsizeX,
+        "cellsizeY": cellsizeY,
+        "nodatavalue": nodata,
+    }
 
-    outputGridSummary = {"sum": 0,
-                         "mean": 0,
-                         "nnodata": 0,
-                         "nnegative": 0,
-                         "xll": newXll,
-                         "yll": newYll,
-                         "ncols": newNcols,
-                         "nrows": newNrows,
-                         "cellsizeX": newCellsizeX,
-                         "cellsizeY": newCellsizeY,
-                         "nodatavalue": newNodata}
+    outputGridSummary = {
+        "sum": 0,
+        "mean": 0,
+        "nnodata": 0,
+        "nnegative": 0,
+        "xll": newXll,
+        "yll": newYll,
+        "ncols": newNcols,
+        "nrows": newNrows,
+        "cellsizeX": newCellsizeX,
+        "cellsizeY": newCellsizeY,
+        "nodatavalue": newNodata,
+    }
 
     # Loop over block of raster (at least one row in each block)
     rowsOffset = 0
     errDict = {}
-    pg = ProgressBar(nrows, options.progressStream)
 
     for i in range(0, nrows, int(procYBlockSize)):
-        pg.update(i)
-        data = band.ReadAsArray(xoff=colmin, yoff=rowmin + i,
-                                win_xsize=procXBlockSize,
-                                win_ysize=procYBlockSize)
+        data = band.ReadAsArray(
+            xoff=colmin,
+            yoff=rowmin + i,
+            win_xsize=procXBlockSize,
+            win_ysize=procYBlockSize,
+        )
 
-        if options.summarize:
-            inputGridSummary = updateGridSummary(data,
-                                                 inputGridSummary, nodata)
+        if args.summarize:
+            inputGridSummary = updateGridSummary(data, inputGridSummary, nodata)
 
-        if options.classTable is not None:
+        if args.classTable is not None:
             try:
                 data = reclassBlock(data, classDict, errDict)
             except IOError as e:
                 log.error(str(e))
                 sys.exit(1)
 
-        if options.cellFactor is not None:
+        if args.cellFactor is not None:
             try:
-                data = resampleBlock(data[:, :],
-                                     cellFactor,
-                                     resamplingMethod,
-                                     nodata)
+                data = resampleBlock(data[:, :], cellFactor, resamplingMethod, nodata)
 
             except ValueError as err:
                 log.error(err.message)
@@ -833,69 +878,94 @@ def main():
                 log.error(err.message)
                 sys.exit(1)
 
-        if options.toProj is not None:
-            blockDef = {"nrows": int(procYBlockSize / cellFactor),
-                        "ncols": int(procXBlockSize / cellFactor),
-                        "xll": xll + (colmin) * cellsizeX,
-                        "yul": yll - (nrows - rowmin - i) * cellsizeY,
-                        "cellsize": cellsizeX * cellFactor,
-                        "nodata": nodata}
+        if args.toProj is not None:
+            blockDef = {
+                "nrows": int(procYBlockSize / cellFactor),
+                "ncols": int(procXBlockSize / cellFactor),
+                "xll": xll + (colmin) * cellsizeX,
+                "yul": yll - (nrows - rowmin - i) * cellsizeY,
+                "cellsize": cellsizeX * cellFactor,
+                "nodata": nodata,
+            }
 
-            reprojectBlock(outArray,
-                           data,
-                           cellFactor,
-                           blockDef,
-                           outDef,
-                           coordTrans,
-                           nvals)
+            reprojectBlock(
+                outArray, data, cellFactor, blockDef, outDef, coordTrans, nvals
+            )
 
         if outFilePath is not None:
-            if options.toShape:
+            if args.toShape:
                 blockYll = yul + i * newCellsizeY  # newCellsizeY is negative
                 blockXll = xll
-                block2vector(data, layer, blockXll, blockYll, newCellsizeX,
-                             newCellsizeY, nodata, fieldName, filter)
-            elif options.toProj is None:
-                outBand.WriteArray(data, 0,
-                                   rowsOffset)  # Write block to raster
+                block2vector(
+                    data,
+                    layer,
+                    blockXll,
+                    blockYll,
+                    newCellsizeX,
+                    newCellsizeY,
+                    nodata,
+                    fieldName,
+                    filter,
+                )
+            elif args.toProj is None:
+                outBand.WriteArray(data, 0, rowsOffset)  # Write block to raster
                 outBand.FlushCache()  # Write data to disk
 
-        if options.summarize:
-            outputGridSummary = updateGridSummary(data,
-                                                  outputGridSummary,
-                                                  nodata)
+        if args.summarize:
+            outputGridSummary = updateGridSummary(data, outputGridSummary, nodata)
 
         rowsOffset += int(procYBlockSize / cellFactor)  # Update offset
 
-    if options.toShape:
+    if args.toShape:
         shapeFile.Destroy()
 
-    if not options.toShape and options.toProj is not None:
-        if options.resamplingMethod is not None and resamplingMethod == "mean":
+    if not args.toShape and args.toProj is not None:
+        if args.resamplingMethod is not None and resamplingMethod == "mean":
             outArray = np.where(nvals > 0, outArray / nvals, outArray)
 
         outBand.WriteArray(outArray, 0, 0)
         outBand.FlushCache()  # Write data to disk
 
-    if options.outfileName is not None and not options.toShape:
+    if args.outfileName is not None and not args.toShape:
         outputDriver = ds.GetDriver()
-        output_ds = outputDriver.CreateCopy(options.outfileName, mem_ds, 0)
+        output_ds = outputDriver.CreateCopy(args.outfileName, mem_ds, 0)
         output_ds = None
         mem_ds = None
 
-    pg.finished()
-
-    if options.summarize:
-        print "\nInput raster summary"
+    if args.summarize:
+        print("\nInput raster summary")
         printGridSummary(inputGridSummary, prefix="input")
-        print "\nOutput raster summary"
+        print("\nOutput raster summary")
         printGridSummary(outputGridSummary, prefix="output")
 
     if errDict != {}:
-        print "Errors/warnings during processing:"
+        print("Errors/warnings during processing:")
 
     for err, nerr in errDict.items():
-        print "%s err in %i cells" % (err, nerr)
+        print("%s err in %i cells" % (err, nerr))
+
+
+class VerboseAction(argparse.Action):
+
+    """Argparse action to handle terminal verbosity level."""
+
+    def __init__(self, option_strings, dest, default=logging.WARNING, help=None):
+        baselogger = logging.getLogger("")
+        baselogger.setLevel(logging.DEBUG)
+        self._loghandler = logging.StreamHandler()
+        self._loghandler.setLevel(default)
+        format = ": ".join((sys.argv[0], "%(levelname)s", "%(message)s"))
+        streamformatter = logging.Formatter(format)
+        self._loghandler.setFormatter(streamformatter)
+        baselogger.addHandler(self._loghandler)
+        super(VerboseAction, self).__init__(
+            option_strings, dest, nargs=0, default=default, help=help
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        currentlevel = getattr(namespace, self.dest, logging.WARNING)
+        self._loghandler.setLevel(currentlevel - 10)
+        setattr(namespace, self.dest, self._loghandler.level)
 
 
 if __name__ == "__main__":
