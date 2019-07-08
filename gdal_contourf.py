@@ -266,7 +266,7 @@ def main():
         nlevels = 11
 
     if options.levels is not None:
-        levels = map(float, options.levels.split())
+        levels = list(map(float, options.levels.split()))
     elif options.logarithmic:
         levels = numpy.logspace(numpy.log10(min_val),
                                 numpy.log10(max_val), nlevels)

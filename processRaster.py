@@ -333,9 +333,9 @@ def main():
 
     parser.add_argument(
         "--bbox",
-        action="store",
-        dest="bbox",
-        help="Only read data within bbox," + ' --box <"x1,y1,x2,y2"',
+        action="store", metavar=('X1', 'Y1', 'X2', 'Y2'),
+        dest="bbox", nargs=4, type=float,
+        help="Only read data within bounding-box"
     )
 
     parser.add_argument(
@@ -460,9 +460,6 @@ def main():
     if args.doc:
         print(__doc__)
         sys.exit(0)
-
-    if len(args) > 0:
-        parser.error("Incorrect number of arguments")
 
     # validate infile path
     if args.infileName is not None:
@@ -617,9 +614,9 @@ def main():
         print("Rotated rasters are not supported")
         sys.exit(1)
 
-    if abs(cellsizeX) != abs(cellsizeY):
-        print("Non-homogenous cellsizes are not supported")
-        sys.exit(1)
+    # if abs(cellsizeX) != abs(cellsizeY):
+    #     print("Non-homogenous cellsizes are not supported")
+    #     sys.exit(1)
 
     bandIndex = int(args.bandIndex)
 
@@ -629,13 +626,10 @@ def main():
     # If no nodata value is present in raster, set to -9999 for completeness
     if nodata is None:
         nodata = -9999
-    # Read data from a window defined by option --bbox <"x1,y1,x2,y2">
+    # Read data from a window defined by option --bbox x1 y1 x2 y2
     if args.bbox is not None:
-        try:
-            x1, y1, x2, y2 = map(float, args.bbox.split(","))
-        except:
-            log.error('Invalid value for option --bbox <"x1,y1,x2,y2">')
-            sys.exit(1)
+
+        x1, y1, x2, y2 = args.bbox
 
         # Check if totally outside raster extent
         if x2 < xll or y2 < yll or x1 > xur or y1 > yul:
@@ -708,10 +702,13 @@ def main():
             src_srs = proj
         else:
             src_srs = osr.SpatialReference()
-            src_srs.ImportFromProj4(args.fromProj)
+            if args.fromProj.lower().startswith('epsg'):
+                src_srs.ImportFromEPSG(int(args.fromProj[5:]))
+            else:
+                src_srs.ImportFromProj4(args.fromProj)
 
         tgt_srs = osr.SpatialReference()
-        if args.toProj.startswith("epsg"):
+        if args.toProj.lower().startswith("epsg"):
             tgt_srs.ImportFromEPSG(int(args.toProj[5:]))
         else:
             tgt_srs.ImportFromProj4(args.toProj)
@@ -850,6 +847,7 @@ def main():
     errDict = {}
 
     for i in range(0, nrows, int(procYBlockSize)):
+        print('progress %g' % (i / nrows * 100.0))
         data = band.ReadAsArray(
             xoff=colmin,
             yoff=rowmin + i,
